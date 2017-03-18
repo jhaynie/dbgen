@@ -92,11 +92,12 @@ func (t *table) GenerateORMTestCase(packageName string, writer io.Writer) error 
 	buf := bufio.NewWriter(writer)
 	var codebuf bytes.Buffer
 	imports := &imports{}
+	imports.Add("context")
+	imports.Add("fmt")
 	imports.Add("testing")
 	imports.Add("os")
-	imports.Add("fmt")
 
-	codebuf.WriteString("func Create" + CamelCase(t.name) + "Table() {\n")
+	codebuf.WriteString("func Create" + CamelCase(t.name) + "Table(ctx context.Context) {\n")
 	codebuf.WriteString("\tdb := GetDatabase()\n")
 	codebuf.WriteString("\tq := \"CREATE TABLE `" + t.name + "` (\" + \n")
 	for i, column := range t.columns {
@@ -116,7 +117,7 @@ func (t *table) GenerateORMTestCase(packageName string, writer io.Writer) error 
 		codebuf.WriteString("\" + \n")
 	}
 	codebuf.WriteString("\t\t\") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;\" \n")
-	codebuf.WriteString(`	_, err := db.Exec(q)
+	codebuf.WriteString(`	_, err := db.ExecContext(ctx, q)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -124,10 +125,10 @@ func (t *table) GenerateORMTestCase(packageName string, writer io.Writer) error 
 `)
 	codebuf.WriteString("}\n\n")
 
-	codebuf.WriteString("func Delete" + CamelCase(t.name) + "Table() {\n")
+	codebuf.WriteString("func Delete" + CamelCase(t.name) + "Table(ctx context.Context) {\n")
 	codebuf.WriteString("\tdb := GetDatabase()\n")
 	codebuf.WriteString("\tq := \"DELETE FROM `" + t.name + "`\"\n")
-	codebuf.WriteString(`	_, err := db.Exec(q)
+	codebuf.WriteString(`	_, err := db.ExecContext(ctx, q)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -136,9 +137,10 @@ func (t *table) GenerateORMTestCase(packageName string, writer io.Writer) error 
 	codebuf.WriteString("}\n\n")
 
 	codebuf.WriteString("func Test" + CamelCase(t.name) + "(t *testing.T) {\n")
+	codebuf.WriteString("\tctx := context.Background()\n")
 	codebuf.WriteString("\tdb := GetDatabase()\n")
-	codebuf.WriteString("\tCreate" + CamelCase(t.name) + "Table()\n")
-	codebuf.WriteString("\tDelete" + CamelCase(t.name) + "Table()\n")
+	codebuf.WriteString("\tCreate" + CamelCase(t.name) + "Table(ctx)\n")
+	codebuf.WriteString("\tDelete" + CamelCase(t.name) + "Table(ctx)\n")
 	codebuf.WriteString("\t" + t.name + " := " + CamelCase(t.name) + "{}\n")
 	for _, column := range t.columns {
 		codebuf.WriteString("\t" + t.name + "." + CamelCase(column.name) + " = ")
@@ -195,7 +197,7 @@ func (t *table) GenerateORMTestCase(packageName string, writer io.Writer) error 
 		}
 		codebuf.WriteString("\n")
 	}
-	codebuf.WriteString("\tr, err := " + t.name + ".DBCreate(db)\n")
+	codebuf.WriteString("\tr, err := " + t.name + ".DBCreate(ctx, db)\n")
 	codebuf.WriteString(`	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +212,7 @@ func (t *table) GenerateORMTestCase(packageName string, writer io.Writer) error 
 	pk := t.GetPrimaryKey()
 	if pk != nil {
 
-		codebuf.WriteString("\texists, err := " + t.name + ".DBExists(db)\n")
+		codebuf.WriteString("\texists, err := " + t.name + ".DBExists(ctx, db)\n")
 		codebuf.WriteString(`	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +220,7 @@ func (t *table) GenerateORMTestCase(packageName string, writer io.Writer) error 
 		t.Fatal("exists was false and should have been true")
 	}
 `)
-		codebuf.WriteString("\tcount, err := " + t.name + ".DBCount(db)\n")
+		codebuf.WriteString("\tcount, err := " + t.name + ".DBCount(ctx, db)\n")
 		codebuf.WriteString(`	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +229,7 @@ func (t *table) GenerateORMTestCase(packageName string, writer io.Writer) error 
 	}
 `)
 		codebuf.WriteString("\toldpk := " + t.name + "." + CamelCase(pk.name) + "\n")
-		codebuf.WriteString("\tdeleted, err := " + t.name + ".DBDelete(db)\n")
+		codebuf.WriteString("\tdeleted, err := " + t.name + ".DBDelete(ctx, db)\n")
 		codebuf.WriteString(`	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +237,7 @@ func (t *table) GenerateORMTestCase(packageName string, writer io.Writer) error 
 		t.Fatal("record was not deleted")
 	}
 `)
-		codebuf.WriteString("\tfound, err := " + t.name + ".DBFindOne(db, " + t.name + "." + CamelCase(pk.name) + ")\n")
+		codebuf.WriteString("\tfound, err := " + t.name + ".DBFindOne(ctx, db, " + t.name + "." + CamelCase(pk.name) + ")\n")
 		codebuf.WriteString(`	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +245,7 @@ func (t *table) GenerateORMTestCase(packageName string, writer io.Writer) error 
 		t.Fatal("record was found and it should have been deleted")
 	}
 `)
-		codebuf.WriteString("\texists, err = " + t.name + ".DBExists(db)\n")
+		codebuf.WriteString("\texists, err = " + t.name + ".DBExists(ctx, db)\n")
 		codebuf.WriteString(`	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +253,7 @@ func (t *table) GenerateORMTestCase(packageName string, writer io.Writer) error 
 		t.Fatal("exists was true and should have been false")
 	}
 `)
-		codebuf.WriteString("\tcount, err = " + t.name + ".DBCount(db)\n")
+		codebuf.WriteString("\tcount, err = " + t.name + ".DBCount(ctx, db)\n")
 		codebuf.WriteString(`	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +263,7 @@ func (t *table) GenerateORMTestCase(packageName string, writer io.Writer) error 
 `)
 		codebuf.WriteString("\t// reset since delete will nullify it\n")
 		codebuf.WriteString("\t" + t.name + "." + CamelCase(pk.name) + " = oldpk\n")
-		codebuf.WriteString("\tinserted, updated, err := " + t.name + ".DBUpsert(db)\n")
+		codebuf.WriteString("\tinserted, updated, err := " + t.name + ".DBUpsert(ctx, db)\n")
 		codebuf.WriteString(`	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +274,7 @@ func (t *table) GenerateORMTestCase(packageName string, writer io.Writer) error 
 		t.Fatal("upsert should return updated = false but was true")
 	}
 `)
-		codebuf.WriteString("\tinserted, updated, err = " + t.name + ".DBUpsert(db)\n")
+		codebuf.WriteString("\tinserted, updated, err = " + t.name + ".DBUpsert(ctx, db)\n")
 		codebuf.WriteString(`	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,6 +284,16 @@ func (t *table) GenerateORMTestCase(packageName string, writer io.Writer) error 
 	if updated == false {
 		t.Fatal("upsert should return updated = false but was true")
 	}
+
+`)
+		codebuf.WriteString("\tfound, err = " + t.name + ".DBFindOne(ctx, db, oldpk)\n")
+		codebuf.WriteString(`	if err != nil {
+		t.Fatal(err)
+	}
+	if found == false {
+		t.Fatal("findOne should return found = true but was false")
+	}
+
 `)
 	}
 

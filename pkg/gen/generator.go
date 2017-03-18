@@ -262,9 +262,8 @@ func (c *column) GenerateSQLSetter(prefix string) string {
 		}
 	}
 	if c.enums != nil {
-		enumprefix := CamelCase(c.table.name) + "_" + CamelCase(c.table.name) + CamelCase(c.name)
-		typename := enumprefix + "_value"
-		return c.GenerateCast(typename + "[" + prefix + c.name + ".String]")
+		enumprefix := CamelCase(c.table.name) + CamelCase(c.name)
+		return enumprefix + "FromSQLValue(" + prefix + c.name + ")"
 	}
 	fmt.Println("undefined type ", c)
 	return "nil"

@@ -13,15 +13,7 @@ import (
 func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 	buf := bufio.NewWriter(writer)
 
-	buf.WriteString("package " + packageName + ";\n\n")
-	buf.WriteString("import (\n")
-	buf.WriteString("\t\"database/sql\"\n")
-	buf.WriteString("\t\"github.com/jhaynie/dbgen/pkg/orm\"\n")
-	if len(t.goimports.imports) > 0 {
-		buf.WriteString(t.goimports.GoString())
-	}
-	buf.WriteString(")\n\n")
-
+	var cbuf bytes.Buffer
 	n := CamelCase(t.name)
 	prefix := strings.ToLower(n)
 	sqlprefix := prefix + "."
@@ -31,19 +23,46 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 
 	for _, column := range t.columns {
 		if column.enums != nil {
-			buf.WriteString("// write out a helper for serializing alias fields for enums which have special characters\n")
-			buf.WriteString("func (x " + n + "_" + n + CamelCase(column.name) + ") SQLValue() string {\n")
-			buf.WriteString("	switch int(x) {\n")
+			cbuf.WriteString("// write out a helper for serializing alias fields for enums which have special characters\n")
+			cbuf.WriteString("func (x " + n + "_" + n + CamelCase(column.name) + ") SQLValue() string {\n")
+			cbuf.WriteString("	switch int(x) {\n")
 			for i, e := range column.enums.enums {
-				buf.WriteString(fmt.Sprintf("\t\tcase %d: {\n", i))
-				buf.WriteString("\t\t\treturn \"" + e.SQLValue() + "\"\n")
-				buf.WriteString(fmt.Sprintf("\t\t}\n"))
+				cbuf.WriteString(fmt.Sprintf("\t\tcase %d: {\n", i))
+				cbuf.WriteString("\t\t\treturn \"" + e.SQLValue() + "\"\n")
+				cbuf.WriteString(fmt.Sprintf("\t\t}\n"))
 			}
-			buf.WriteString("	}\n")
-			buf.WriteString("	return \"\"\n")
-			buf.WriteString("}\n\n")
+			cbuf.WriteString("	}\n")
+			cbuf.WriteString("	return \"\"\n")
+			cbuf.WriteString("}\n\n")
+
+			enumprefix := n + "_" + n + CamelCase(column.name) + "_value"
+			tn := n + "_" + n + CamelCase(column.name)
+			t.goimports.Add("strings")
+
+			cbuf.WriteString("// write out a helper for deserializing enums from SQL\n")
+			cbuf.WriteString("func " + n + CamelCase(column.name) + "FromSQLValue(v sql.NullString) " + tn + " {\n")
+			cbuf.WriteString("	return " + tn + "(" + enumprefix + "[strings.ToUpper(v.String)])\n")
+			cbuf.WriteString("}\n\n")
+
+			cbuf.WriteString("// write out a helper for deserializing enums from String\n")
+			cbuf.WriteString("func " + n + CamelCase(column.name) + "FromStringValue(v string) " + tn + " {\n")
+			cbuf.WriteString("	return " + tn + "(" + enumprefix + "[strings.ToUpper(v)])\n")
+			cbuf.WriteString("}\n\n")
 		}
 	}
+
+	buf.WriteString("package " + packageName + ";\n\n")
+	buf.WriteString("import (\n")
+	buf.WriteString("\t\"context\"\n")
+	buf.WriteString("\t\"database/sql\"\n")
+	buf.WriteString("\t\"github.com/jhaynie/dbgen/pkg/orm\"\n")
+	if len(t.goimports.imports) > 0 {
+		buf.WriteString(t.goimports.GoString())
+	}
+	buf.WriteString(")\n\n")
+
+	// write out any definitions
+	buf.Write(cbuf.Bytes())
 
 	// calculate the checksum
 	buf.WriteString("// Checksum returns a checksum which is a SHA256 of all the values in the record excluding the primary key and checksum\n")
@@ -70,7 +89,7 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 
 	// INSERT
 	buf.WriteString("// Create will create a new " + CamelCase(t.name) + " record in the database\n")
-	buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBCreate", "db *sql.DB", "(sql.Result, error)"))
+	buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBCreate", "ctx context.Context, db *sql.DB", "(sql.Result, error)"))
 	buf.WriteString("\tq := \"INSERT INTO `" + t.name + "` (")
 	for i, column := range t.columns {
 		buf.WriteString("`" + column.name + "`")
@@ -86,7 +105,7 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 		}
 	}
 	buf.WriteString(")\"\n")
-	buf.WriteString("\treturn db.Exec(q,\n")
+	buf.WriteString("\treturn db.ExecContext(ctx, q,\n")
 	for _, column := range t.columns {
 		if column.IsChecksum() {
 			buf.WriteString("\t\t" + prefix + ".CalculateChecksum()")
@@ -127,7 +146,7 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 	if pk != nil {
 		// UPDATE
 		buf.WriteString("// Update will update the " + n + " record in the database\n")
-		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBUpdate", "db *sql.DB", "(sql.Result, error)"))
+		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBUpdate", "ctx context.Context, db *sql.DB", "(sql.Result, error)"))
 		if checksum != nil {
 			buf.WriteString("\tdirty, checksum := " + prefix + ".DBIsDirty()\n")
 			buf.WriteString("\tif dirty == false {\n")
@@ -146,7 +165,7 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 			}
 		}
 		buf.WriteString(" WHERE `" + pk.name + "` = ?\"\n")
-		buf.WriteString("\treturn db.Exec(q,\n")
+		buf.WriteString("\treturn db.ExecContext(ctx, q,\n")
 		for _, column := range t.columns {
 			if column.primarykey == false {
 				buf.WriteString("\t\t" + column.GenerateSQL(sqlprefix) + ",\n")
@@ -159,9 +178,9 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 
 		// DELETE
 		buf.WriteString("// Delete will delete the " + n + " record in the database\n")
-		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBDelete", "db *sql.DB", "(bool, error)"))
+		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBDelete", "ctx context.Context, db *sql.DB", "(bool, error)"))
 		buf.WriteString("\tq := \"DELETE FROM `" + t.name + "` WHERE `" + pk.name + "` = ?\"\n")
-		buf.WriteString("\tr, err := db.Exec(q, " + pk.GenerateSQL(sqlprefix) + ")\n")
+		buf.WriteString("\tr, err := db.ExecContext(ctx, q, " + pk.GenerateSQL(sqlprefix) + ")\n")
 		buf.WriteString("\tif err != nil && err != sql.ErrNoRows {\n")
 		buf.WriteString("\t\treturn false, err\n")
 		buf.WriteString("\t}\n")
@@ -176,14 +195,12 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 
 		// FIND ONE
 		buf.WriteString("// FindOne finds a " + n + " for the primary key and populates the record with the results\n")
-		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBFindOne", "db *sql.DB, "+pk.name+" "+pk.GenerateVariableType(), "(bool, error)"))
+		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBFindOne", "ctx context.Context, db *sql.DB, "+pk.name+" "+pk.GenerateVariableType(), "(bool, error)"))
 		buf.WriteString("\tq := \"SELECT ")
 		for i, column := range t.columns {
-			if column.primarykey == false {
-				buf.WriteString(column.GenerateSQLSelect())
-				if i+1 < colcount {
-					buf.WriteString(",")
-				}
+			buf.WriteString(column.GenerateSQLSelect())
+			if i+1 < colcount {
+				buf.WriteString(",")
 			}
 		}
 		buf.WriteString(" FROM `" + t.name + "` WHERE `" + pk.name + "` = ? LIMIT 1\"\n")
@@ -195,7 +212,7 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 
 		// EXISTS
 		buf.WriteString("// Exists returns true if the " + n + " record exists in the database\n")
-		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBExists", "db *sql.DB", "(bool, error)"))
+		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBExists", "ctx context.Context, db *sql.DB", "(bool, error)"))
 		buf.WriteString("\tq := \"SELECT " + pk.GenerateSQLSelect() + " from `" + t.name + "` WHERE " + pk.GenerateSQLSelect() + " = ?\"\n")
 		buf.WriteString("\tvar _" + pk.name + " " + pk.GetSQLType() + "\n")
 		buf.WriteString("\terr := db.QueryRow(q, " + prefix + "." + CamelCase(pk.name) + ").Scan(&_" + pk.name + ")\n")
@@ -208,18 +225,18 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 
 		// UPSERT
 		buf.WriteString("// Upsert creates or updates a " + n + " record inside a safe transaction\n")
-		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBUpsert", "db *sql.DB", "(bool, bool, error)"))
+		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBUpsert", "ctx context.Context, db *sql.DB", "(bool, bool, error)"))
 		buf.WriteString("\ttx, err := db.Begin()\n")
 		buf.WriteString("\tif err != nil {\n")
 		buf.WriteString("\t\treturn false, false, err\n")
 		buf.WriteString("\t}\n")
-		buf.WriteString("\texists, err := " + prefix + ".DBExists(db)\n")
+		buf.WriteString("\texists, err := " + prefix + ".DBExists(ctx, db)\n")
 		buf.WriteString("\tif err != nil {\n")
 		buf.WriteString("\t\ttx.Rollback()\n")
 		buf.WriteString("\t\treturn false, false, err\n")
 		buf.WriteString("\t}\n")
 		buf.WriteString("\tif exists {\n")
-		buf.WriteString("\t\tr, err := " + prefix + ".DBUpdate(db)\n")
+		buf.WriteString("\t\tr, err := " + prefix + ".DBUpdate(ctx, db)\n")
 		buf.WriteString("\t\tif err != nil {\n")
 		buf.WriteString("\t\t\ttx.Rollback()\n")
 		buf.WriteString("\t\t\treturn false, false, err\n")
@@ -231,7 +248,7 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 		buf.WriteString("\t\t}\n")
 		buf.WriteString("\t\treturn false, r != nil, nil\n")
 		buf.WriteString("\t}\n")
-		buf.WriteString("\tr, err := " + prefix + ".DBCreate(db)\n")
+		buf.WriteString("\tr, err := " + prefix + ".DBCreate(ctx, db)\n")
 		buf.WriteString("\tif err != nil {\n")
 		buf.WriteString("\t\ttx.Rollback()\n")
 		buf.WriteString("\t\treturn false, false, err\n")
@@ -254,7 +271,7 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 
 	// FIND
 	buf.WriteString("// Find a specific " + n + " with a filter\n")
-	buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBFind", "db *sql.DB, _params ...interface{}", "(bool, error)"))
+	buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBFind", "ctx context.Context, db *sql.DB, _params ...interface{}", "(bool, error)"))
 	buf.WriteString("\tparams := make([]interface{}, 0)\n")
 	buf.WriteString(cstring.String())
 	buf.WriteString(fmt.Sprintf(`	params = append(params, orm.Table("%s"))
@@ -273,7 +290,7 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 
 	// COUNT
 	buf.WriteString("// Count the total number of " + n + " records with optional filters\n")
-	buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBCount", "db *sql.DB, _params ...interface{}", "(int64, error)"))
+	buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBCount", "ctx context.Context, db *sql.DB, _params ...interface{}", "(int64, error)"))
 	buf.WriteString(fmt.Sprintf(`	params := make([]interface{}, 0)
 	params = append(params, orm.CountAlias("*", "count"))
 	params = append(params, orm.Table("%s"))
@@ -296,7 +313,7 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 
 	// Find Many
 	buf.WriteString("// Find returns " + n + " records with optional filters\n")
-	buf.WriteString("func Find" + n + "s(db *sql.DB, _params ...interface{}) ([]*" + n + ", error) {\n")
+	buf.WriteString("func Find" + n + "s(ctx context.Context, db *sql.DB, _params ...interface{}) ([]*" + n + ", error) {\n")
 	buf.WriteString("\tresults := make([]*" + n + ",0)\n")
 	buf.WriteString("\tparams := make([]interface{}, 0)\n")
 	buf.WriteString(cstring.String())
