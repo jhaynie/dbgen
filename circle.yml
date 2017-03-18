@@ -1,6 +1,8 @@
 test:
    pre:
       - make vet
+   override:
+      - make test
 dependencies:
    override:
       - mkdir -p ~/.go_workspace/src/github.com/jhaynie
