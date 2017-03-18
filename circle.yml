@@ -1,6 +1,13 @@
 machine:
   services:
     - docker
+  environment:
+    GODIST: "go1.8.linux-amd64.tar.gz"
+  post:
+      - mkdir -p downloads
+      - test -e downloads/$GODIST || curl -L -o downloads/$GODIST https://storage.googleapis.com/golang/$GODIST
+      - sudo rm -rf /usr/local/go
+      - sudo tar -C /usr/local -xzf downloads/$GODIST
 test:
    pre:
       - make vet
@@ -10,3 +17,4 @@ dependencies:
    override:
       - mkdir -p ~/.go_workspace/src/github.com/jhaynie
       - cd ~/.go_workspace/src/github.com/jhaynie && if [ ! -d "dbgen" ]; then ln -s ~/dbgen; fi
+
