@@ -5,7 +5,7 @@ test:
    pre:
       - make vet
    override:
-      - cd ~/.go_workspace/src/github.com/jhaynie/dbgen && make test
+      - cd ~/.go_workspace/src/github.com/jhaynie/dbgen && GOPATH=~/.go_workspace make test
 dependencies:
    override:
       - mkdir -p ~/.go_workspace/src/github.com/jhaynie
