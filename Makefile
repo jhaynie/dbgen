@@ -25,10 +25,12 @@ fmt:
 	@gofmt -s -l -w $(SRC)
 
 vet:
-	@for i in `find . -type d -not -path './hack' -not -path './hack/*' -not -path './vendor/*' -not -path './.git/*' -not -path './cmd' -not -path './.*' -not -path './build/*' -not -path './backup' -not -path './vendor' -not -path '.' -not -path './build' -not -path './etc' -not -path './etc/*' -not -path './pkg' | sed 's/^\.\///g'`; do go vet github.com/$(BASEPKG)/$$i; done
+	go vet ./cmd/...
+	go vet ./pkg/...
 
 test:
 	go test -v ./pkg/orm/...
+	go test -v ./pkg/gen/...
 
 linux: build
 	@docker run --rm -v $(GOPATH):/go -w /go/src/github.com/$(BASEPKG) golang:latest go build -ldflags $(L) -o build/linux/$(NAME)-linux-$(VERSION) $(PKGMAIN)

@@ -99,11 +99,11 @@ func ToSQLDate(v interface{}) mysql.NullTime {
 		return v.(mysql.NullTime)
 	case time.Time:
 		{
-			return mysql.NullTime{v.(time.Time), true}
+			return mysql.NullTime{Time: v.(time.Time), Valid: true}
 		}
 	case *time.Time:
 		{
-			return mysql.NullTime{*v.(*time.Time), true}
+			return mysql.NullTime{Time: *v.(*time.Time), Valid: true}
 		}
 	case *tspb.Timestamp:
 		{
@@ -111,7 +111,7 @@ func ToSQLDate(v interface{}) mysql.NullTime {
 			if err != nil {
 				return mysql.NullTime{}
 			}
-			return mysql.NullTime{ts, true}
+			return mysql.NullTime{Time: ts, Valid: true}
 		}
 	case string:
 		if v.(string) == "now" {
@@ -224,7 +224,7 @@ func ToSQLBool(v interface{}) sql.NullBool {
 	switch v.(type) {
 	case bool:
 		{
-			return sql.NullBool{v.(bool), true}
+			return sql.NullBool{Bool: v.(bool), Valid: true}
 		}
 	case string:
 		s := v.(string)
@@ -232,27 +232,26 @@ func ToSQLBool(v interface{}) sql.NullBool {
 			return sql.NullBool{}
 		}
 		if s == "true" || s == "1" {
-			return sql.NullBool{true, true}
+			return sql.NullBool{Bool: true, Valid: true}
 		}
-		return sql.NullBool{false, true}
+		return sql.NullBool{Bool: false, Valid: true}
 	case json.Number:
 		i, err := v.(json.Number).Int64()
 		if err != nil {
 			i = 0
 		}
-		return sql.NullBool{i > 0, true}
+		return sql.NullBool{Bool: i > 0, Valid: true}
 	case int64:
 		{
-			return sql.NullBool{v.(int64) > 0, true}
+			return sql.NullBool{Bool: v.(int64) > 0, Valid: true}
 		}
 	default:
 		return ToSQLBool(fmt.Sprintf("%v", v))
 	}
-	return sql.NullBool{}
 }
 
 func ToSQLBlob(buf []byte) sql.NullString {
-	return sql.NullString{string(buf), true}
+	return sql.NullString{String: string(buf), Valid: true}
 }
 
 func HashStrings(objects ...string) string {
