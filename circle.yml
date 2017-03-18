@@ -1,3 +1,7 @@
 test:
    pre:
       - make vet
+dependencies:
+   override:
+      - mkdir -p ~/.go_workspace/src/github.com/jhaynie
+      - cd ~/.go_workspace/src/github.com/jhaynie && if [ ! -d "dbgen" ]; then ln -s ~/dbgen; fi
