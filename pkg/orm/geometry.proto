@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package orm;
+
+message Geometry {
+	float latitude = 1;
+	float longitude = 2;
+}

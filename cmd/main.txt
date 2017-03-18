@@ -1,0 +1,129 @@
+package main
+
+func Foo() {
+	
+}
+
+// import (
+// 	"context"
+// 	"crypto/tls"
+// 	"fmt"
+// 	"io"
+// 	"net"
+// 	"os"
+// 	"strings"
+
+// 	_ "github.com/go-sql-driver/mysql"
+// 	"github.com/gogo/protobuf/proto"
+// 	"github.com/jhaynie/dbgen/gen/schema"
+// 	"github.com/jhaynie/dbgen/pkg/engine"
+// 	"github.com/jhaynie/dbgen/pkg/orm"
+// 	"github.com/jhaynie/dbgen/pkg/schemagen"
+// 	"github.com/jmoiron/sqlx"
+// 	"github.com/jmoiron/sqlx/reflectx"
+// 	"google.golang.org/grpc"
+// 	"google.golang.org/grpc/credentials"
+// )
+
+// var db *sqlx.DB
+
+// func createServer(db *sqlx.DB) error {
+// 	port := 8449
+// 	certFile := "/Users/jhaynie/go/src/github.com/pinpt/deployer/.secrets/certs/certificates/local.grpc.ppoint.io.crt"
+// 	keyFile := "/Users/jhaynie/go/src/github.com/pinpt/deployer/.secrets/certs/certificates/local.grpc.ppoint.io.key"
+// 	creds, err := credentials.NewServerTLSFromFile(certFile, keyFile)
+// 	configuration := []grpc.ServerOption{
+// 		grpc.Creds(creds),
+// 		// grpc.RPCDecompressor(grpc.NewGZIPDecompressor()),
+// 		// grpc.RPCCompressor(grpc.NewGZIPCompressor()),
+// 	}
+// 	server := grpc.NewServer(configuration...)
+// 	impl := engine.NewEngine(db)
+// 	orm.RegisterDBServiceServer(server, impl)
+// 	listen, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", port))
+// 	if err != nil {
+// 		return err
+// 	}
+// 	go func() {
+// 		if err := server.Serve(listen); err != nil {
+// 			fmt.Println(err)
+// 		}
+// 	}()
+// 	return nil
+// }
+
+// func start() {
+
+// 	done := make(chan bool)
+
+// 	err := createServer(db)
+// 	if err != nil {
+// 		fmt.Println(err)
+// 		os.Exit(1)
+// 	}
+
+// 	var tlsConfig = &tls.Config{}
+// 	ta := credentials.NewTLS(tlsConfig)
+// 	dialoptions := make([]grpc.DialOption, 0)
+// 	dialoptions = append(dialoptions, grpc.WithTransportCredentials(ta))
+// 	conn, err := grpc.Dial("local.grpc.ppoint.io:8449", dialoptions...)
+// 	if err != nil {
+// 		fmt.Println(err)
+// 		os.Exit(1)
+// 	}
+// 	defer conn.Close()
+// 	c := orm.NewDBServiceClient(conn)
+
+// 	query := &orm.Query{
+// 		Entity: "user",
+// 	}
+// 	r, err := c.ExecuteQuery(context.Background(), query)
+// 	if err != nil {
+// 		fmt.Println(err)
+// 		os.Exit(1)
+// 	}
+// 	fmt.Println("received results")
+// 	for {
+// 		row, err := r.Recv()
+// 		if err == io.EOF {
+// 			break
+// 		}
+// 		if err != nil {
+// 			fmt.Println(err)
+// 			break
+// 		}
+// 		if row == nil {
+// 			break
+// 		}
+// 		user := &schema.User{}
+// 		err = proto.Unmarshal(row.Row, user)
+// 		if err != nil {
+// 			fmt.Println(err)
+// 			break
+// 		}
+// 		fmt.Println("returned: ", user)
+// 	}
+
+// 	<-done
+// }
+
+// func generate() {
+// 	err := schemagen.Generate(db, "pinpoint2", "schema", "./gen")
+// 	if err != nil {
+// 		fmt.Println(err)
+// 		os.Exit(1)
+// 	}
+// }
+
+// func main() {
+// 	var err error
+// 	db, err = sqlx.Connect("mysql", "root:@/pinpoint2")
+// 	if err != nil {
+// 		fmt.Println(err)
+// 		os.Exit(1)
+// 	}
+// 	defer db.Close()
+// 	generate()
+// 	db.Mapper = reflectx.NewMapperFunc("json", strings.ToLower)
+// 	// start()
+// }
