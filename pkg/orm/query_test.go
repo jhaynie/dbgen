@@ -207,4 +207,9 @@ func TestBuildQuery(t *testing.T) {
 	assert.Equal("SELECT SUM(`foo`)", q)
 	assert.NotNil(p)
 	assert.Len(p, 0)
+
+	q, p = BuildQuery(IsEqual("repo_id", "123"), Limit(1))
+	assert.Equal("WHERE `repo_id` = ? LIMIT 1", q)
+	assert.NotNil(p)
+	assert.Len(p, 1)
 }

@@ -426,6 +426,9 @@ func BuildQuery(components ...interface{}) (string, []interface{}) {
 		if l, ok := component.(LimitDef); ok {
 			if hasLimit == false {
 				hasLimit = true
+				if strings.HasSuffix(buf.String(), " ") == false {
+					buf.WriteString(" ")
+				}
 				buf.WriteString(l.String())
 				continue
 			}
@@ -433,6 +436,9 @@ func BuildQuery(components ...interface{}) (string, []interface{}) {
 		if r, ok := component.(RangeDef); ok {
 			if hasLimit == false {
 				hasLimit = true
+				if strings.HasSuffix(buf.String(), " ") == false {
+					buf.WriteString(" ")
+				}
 				buf.WriteString(r.String())
 				continue
 			}

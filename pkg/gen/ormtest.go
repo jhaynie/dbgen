@@ -103,7 +103,16 @@ func (t *table) GenerateORMTestCase(packageName string, writer io.Writer) error 
 	for i, column := range t.columns {
 		codebuf.WriteString("\t\t\"`" + column.name + "` " + column.columntype)
 		if column.defvalue != "" {
-			codebuf.WriteString(" DEFAULT \\\"" + column.defvalue + "\\\"")
+			switch strings.ToUpper(column.defvalue) {
+			case "0", "NULL", "CURRENT_TIMESTAMP":
+				{
+					codebuf.WriteString(" DEFAULT " + column.defvalue)
+				}
+			default:
+				{
+					codebuf.WriteString(" DEFAULT \\\"" + column.defvalue + "\\\"")
+				}
+			}
 		}
 		if column.nullable == false {
 			codebuf.WriteString(" NOT NULL")
