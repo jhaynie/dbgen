@@ -3,7 +3,9 @@ package orm
 import (
 	"crypto/sha256"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -181,9 +183,29 @@ func ToSQLInt64(v interface{}) sql.NullInt64 {
 			i = 0
 		}
 		return sql.NullInt64{Int64: i, Valid: true}
+	case int:
+		{
+			i := v.(int)
+			if IsNullInt(int32(i)) {
+				return sql.NullInt64{}
+			}
+			return sql.NullInt64{Int64: int64(i), Valid: true}
+		}
+	case int32:
+		{
+			i := v.(int32)
+			if IsNullInt(i) {
+				return sql.NullInt64{}
+			}
+			return sql.NullInt64{Int64: int64(i), Valid: true}
+		}
 	case int64:
 		{
-			return sql.NullInt64{Int64: v.(int64), Valid: true}
+			i := v.(int64)
+			if IsNullInt(int32(i)) {
+				return sql.NullInt64{}
+			}
+			return sql.NullInt64{Int64: i, Valid: true}
 		}
 	default:
 		return sql.NullInt64{Int64: toInt64(fmt.Sprintf("%v", v)), Valid: true}
@@ -296,4 +318,44 @@ func UUID() string {
 
 func RandUID() int32 {
 	return int32(rand.Intn(99999999))
+}
+
+type NullIntType int32
+
+const NullInt32 NullIntType = -2147483647
+
+func IsNullInt(v int32) bool {
+	return NullIntType(v) == NullInt32
+}
+
+func (v NullIntType) String() string {
+	return fmt.Sprintf("%v", int32(v))
+}
+
+// Value will do the proper serialization for SQL inserting
+func (v NullIntType) Value() (driver.Value, error) {
+	return NullInt32, nil
+}
+
+// Scan will do the proper deserialization for SQL inserting
+func (v *NullIntType) Scan(value interface{}) error {
+	if value == nil {
+		*v = NullInt32
+		return nil
+	}
+	if iv, err := driver.Int32.ConvertValue(value); err == nil {
+		if value, ok := iv.(int32); ok {
+			*v = NullIntType(value)
+			return nil
+		}
+		if value, ok := iv.(int); ok {
+			*v = NullIntType(value)
+			return nil
+		}
+		if value, ok := iv.(int64); ok {
+			*v = NullIntType(value)
+			return nil
+		}
+	}
+	return errors.New("failed to scan NullIntType")
 }

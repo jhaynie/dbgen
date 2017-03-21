@@ -156,3 +156,11 @@ func TestTimestamp(t *testing.T) {
 	sdt := ToSQLDate(dt)
 	assert.Equal(sdt.Valid, true)
 }
+
+func TestNullInt32(t *testing.T) {
+	v := NullInt32
+	assert := assert.New(t)
+	assert.Equal(v, NullInt32)
+	assert.False(IsNullInt(123))
+	assert.True(IsNullInt(int32(v)))
+}

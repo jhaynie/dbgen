@@ -119,6 +119,104 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 	buf.WriteString("}\n")
 	buf.WriteString("\n")
 
+	// INSERT with TX
+	buf.WriteString("// DBCreateTx will create a new " + CamelCase(t.name) + " record in the database within an existing transaction\n")
+	buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBCreateTx", "ctx context.Context, tx *sql.Tx", "(sql.Result, error)"))
+	buf.WriteString("\tq := \"INSERT INTO `" + t.name + "` (")
+	for i, column := range t.columns {
+		buf.WriteString("`" + column.name + "`")
+		if i+1 < colcount {
+			buf.WriteString(",")
+		}
+	}
+	buf.WriteString(") VALUES (")
+	for i, column := range t.columns {
+		buf.WriteString(column.GenerateSQLPlaceholder())
+		if i+1 < colcount {
+			buf.WriteString(",")
+		}
+	}
+	buf.WriteString(")\"\n")
+	buf.WriteString("\treturn tx.ExecContext(ctx, q,\n")
+	for _, column := range t.columns {
+		if column.IsChecksum() {
+			buf.WriteString("\t\t" + prefix + ".CalculateChecksum()")
+		} else {
+			buf.WriteString("\t\t" + column.GenerateSQL(sqlprefix))
+		}
+		buf.WriteString(",")
+		buf.WriteString("\n")
+	}
+	buf.WriteString("\t)\n")
+	buf.WriteString("}\n")
+	buf.WriteString("\n")
+
+	if pk != nil {
+		// INSERT WITH IGNORING DUPLICATE KEY (acts like an upsert w/o a transaction)
+		buf.WriteString("// DBCreateIgnoreDuplicate will create a new " + CamelCase(t.name) + " record in the database and will ignore duplicate key exception (acts like an upsert without a transaction)\n")
+		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBCreateIgnoreDuplicate", "ctx context.Context, db *sql.DB", "(sql.Result, error)"))
+		buf.WriteString("\tq := \"INSERT INTO `" + t.name + "` (")
+		for i, column := range t.columns {
+			buf.WriteString("`" + column.name + "`")
+			if i+1 < colcount {
+				buf.WriteString(",")
+			}
+		}
+		buf.WriteString(") VALUES (")
+		for i, column := range t.columns {
+			buf.WriteString(column.GenerateSQLPlaceholder())
+			if i+1 < colcount {
+				buf.WriteString(",")
+			}
+		}
+		buf.WriteString(") ON DUPLICATE KEY UPDATE `" + pk.name + "` = `" + pk.name + "`\"\n")
+		buf.WriteString("\treturn db.ExecContext(ctx, q,\n")
+		for _, column := range t.columns {
+			if column.IsChecksum() {
+				buf.WriteString("\t\t" + prefix + ".CalculateChecksum()")
+			} else {
+				buf.WriteString("\t\t" + column.GenerateSQL(sqlprefix))
+			}
+			buf.WriteString(",")
+			buf.WriteString("\n")
+		}
+		buf.WriteString("\t)\n")
+		buf.WriteString("}\n")
+		buf.WriteString("\n")
+
+		// INSERT WITH IGNORING DUPLICATE KEY and Tx
+		buf.WriteString("// DBCreateIgnoreDuplicateTx will create a new " + CamelCase(t.name) + " record in the database and will ignore duplicate key exception (acts like an upsert without a transaction)\n")
+		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBCreateIgnoreDuplicateTx", "ctx context.Context, tx *sql.Tx", "(sql.Result, error)"))
+		buf.WriteString("\tq := \"INSERT INTO `" + t.name + "` (")
+		for i, column := range t.columns {
+			buf.WriteString("`" + column.name + "`")
+			if i+1 < colcount {
+				buf.WriteString(",")
+			}
+		}
+		buf.WriteString(") VALUES (")
+		for i, column := range t.columns {
+			buf.WriteString(column.GenerateSQLPlaceholder())
+			if i+1 < colcount {
+				buf.WriteString(",")
+			}
+		}
+		buf.WriteString(") ON DUPLICATE KEY UPDATE `" + pk.name + "` = `" + pk.name + "`\"\n")
+		buf.WriteString("\treturn tx.ExecContext(ctx, q,\n")
+		for _, column := range t.columns {
+			if column.IsChecksum() {
+				buf.WriteString("\t\t" + prefix + ".CalculateChecksum()")
+			} else {
+				buf.WriteString("\t\t" + column.GenerateSQL(sqlprefix))
+			}
+			buf.WriteString(",")
+			buf.WriteString("\n")
+		}
+		buf.WriteString("\t)\n")
+		buf.WriteString("}\n")
+		buf.WriteString("\n")
+	}
+
 	generateScan := func(name string, indent string, returnstr string) string {
 		var buf bytes.Buffer
 		for _, column := range t.columns {
@@ -145,7 +243,7 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 
 	if pk != nil {
 		// UPDATE
-		buf.WriteString("// Update will update the " + n + " record in the database\n")
+		buf.WriteString("// DBUpdate will update the " + n + " record in the database\n")
 		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBUpdate", "ctx context.Context, db *sql.DB", "(sql.Result, error)"))
 		if checksum != nil {
 			buf.WriteString("\tdirty, checksum := " + prefix + ".DBIsDirty()\n")
@@ -176,8 +274,40 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 		buf.WriteString("}\n")
 		buf.WriteString("\n")
 
+		// UPDATE with Tx
+		buf.WriteString("// DBUpdateTx will update the " + n + " record in the database within an existing transaction\n")
+		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBUpdateTx", "ctx context.Context, tx *sql.Tx", "(sql.Result, error)"))
+		if checksum != nil {
+			buf.WriteString("\tdirty, checksum := " + prefix + ".DBIsDirty()\n")
+			buf.WriteString("\tif dirty == false {\n")
+			buf.WriteString("\t\treturn nil, nil\n")
+			buf.WriteString("\t}\n")
+			buf.WriteString("\t" + prefix + "." + CamelCase(checksum.name) + " = checksum\n")
+		}
+		buf.WriteString("\tq := \"UPDATE `" + t.name + "` SET ")
+		for i, column := range t.columns {
+			if column.primarykey == false {
+				buf.WriteString("`" + column.name + "` = ")
+				buf.WriteString(column.GenerateSQLPlaceholder())
+				if i+1 < colcount {
+					buf.WriteString(", ")
+				}
+			}
+		}
+		buf.WriteString(" WHERE `" + pk.name + "` = ?\"\n")
+		buf.WriteString("\treturn tx.ExecContext(ctx, q,\n")
+		for _, column := range t.columns {
+			if column.primarykey == false {
+				buf.WriteString("\t\t" + column.GenerateSQL(sqlprefix) + ",\n")
+			}
+		}
+		buf.WriteString("\t\t" + pk.GenerateSQL(sqlprefix) + ",\n")
+		buf.WriteString("\t)\n")
+		buf.WriteString("}\n")
+		buf.WriteString("\n")
+
 		// DELETE
-		buf.WriteString("// Delete will delete the " + n + " record in the database\n")
+		buf.WriteString("// DBDelete will delete the " + n + " record in the database\n")
 		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBDelete", "ctx context.Context, db *sql.DB", "(bool, error)"))
 		buf.WriteString("\tq := \"DELETE FROM `" + t.name + "` WHERE `" + pk.name + "` = ?\"\n")
 		buf.WriteString("\tr, err := db.ExecContext(ctx, q, " + pk.GenerateSQL(sqlprefix) + ")\n")
@@ -193,8 +323,25 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 		buf.WriteString("}\n")
 		buf.WriteString("\n")
 
+		// DELETE Tx
+		buf.WriteString("// DBDeleteTx will delete the " + n + " record in the database within an existing transaction\n")
+		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBDeleteTx", "ctx context.Context, tx *sql.Tx", "(bool, error)"))
+		buf.WriteString("\tq := \"DELETE FROM `" + t.name + "` WHERE `" + pk.name + "` = ?\"\n")
+		buf.WriteString("\tr, err := tx.ExecContext(ctx, q, " + pk.GenerateSQL(sqlprefix) + ")\n")
+		buf.WriteString("\tif err != nil && err != sql.ErrNoRows {\n")
+		buf.WriteString("\t\treturn false, err\n")
+		buf.WriteString("\t}\n")
+		buf.WriteString("\t" + prefix + "." + CamelCase(pk.name) + " = " + pk.GenerateNullValue() + "\n")
+		buf.WriteString("\trows, err := r.RowsAffected()\n")
+		buf.WriteString("\tif err != nil {\n")
+		buf.WriteString("\t\treturn false, err\n")
+		buf.WriteString("\t}\n")
+		buf.WriteString("\treturn rows > 0, nil\n")
+		buf.WriteString("}\n")
+		buf.WriteString("\n")
+
 		// FIND ONE
-		buf.WriteString("// FindOne finds a " + n + " for the primary key and populates the record with the results\n")
+		buf.WriteString("// DBFindOne finds a " + n + " for the primary key and populates the record with the results\n")
 		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBFindOne", "ctx context.Context, db *sql.DB, "+pk.name+" "+pk.GenerateVariableType(), "(bool, error)"))
 		buf.WriteString("\tq := \"SELECT ")
 		for i, column := range t.columns {
@@ -210,8 +357,25 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 		buf.WriteString("}\n")
 		buf.WriteString("\n")
 
+		// FIND ONE with Tx
+		buf.WriteString("// DBFindOneTx finds a " + n + " for the primary key and populates the record with the results within an existing transaction\n")
+		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBFindOneTx", "ctx context.Context, tx *sql.Tx, "+pk.name+" "+pk.GenerateVariableType(), "(bool, error)"))
+		buf.WriteString("\tq := \"SELECT ")
+		for i, column := range t.columns {
+			buf.WriteString(column.GenerateSQLSelect())
+			if i+1 < colcount {
+				buf.WriteString(",")
+			}
+		}
+		buf.WriteString(" FROM `" + t.name + "` WHERE `" + pk.name + "` = ? LIMIT 1\"\n")
+		buf.WriteString("\trow := tx.QueryRow(q, " + pk.name + ")\n")
+		buf.WriteString(generateScan("row", "", "false"))
+		buf.WriteString("\treturn true, nil\n")
+		buf.WriteString("}\n")
+		buf.WriteString("\n")
+
 		// EXISTS
-		buf.WriteString("// Exists returns true if the " + n + " record exists in the database\n")
+		buf.WriteString("// DBExists returns true if the " + n + " record exists in the database\n")
 		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBExists", "ctx context.Context, db *sql.DB", "(bool, error)"))
 		buf.WriteString("\tq := \"SELECT " + pk.GenerateSQLSelect() + " from `" + t.name + "` WHERE " + pk.GenerateSQLSelect() + " = ?\"\n")
 		buf.WriteString("\tvar _" + pk.name + " " + pk.GetSQLType() + "\n")
@@ -223,8 +387,21 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 		buf.WriteString("}\n")
 		buf.WriteString("\n")
 
+		// EXISTS with Tx
+		buf.WriteString("// DBExistsTx returns true if the " + n + " record exists in the database within an existing transaction\n")
+		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBExistsTx", "ctx context.Context, tx *sql.Tx", "(bool, error)"))
+		buf.WriteString("\tq := \"SELECT " + pk.GenerateSQLSelect() + " from `" + t.name + "` WHERE " + pk.GenerateSQLSelect() + " = ?\"\n")
+		buf.WriteString("\tvar _" + pk.name + " " + pk.GetSQLType() + "\n")
+		buf.WriteString("\terr := tx.QueryRow(q, " + prefix + "." + CamelCase(pk.name) + ").Scan(&_" + pk.name + ")\n")
+		buf.WriteString("\tif err != nil && err != sql.ErrNoRows {\n")
+		buf.WriteString("\t\treturn false, err\n")
+		buf.WriteString("\t}\n")
+		buf.WriteString("\treturn _" + pk.name + ".Valid, nil\n")
+		buf.WriteString("}\n")
+		buf.WriteString("\n")
+
 		// UPSERT
-		buf.WriteString("// Upsert creates or updates a " + n + " record inside a safe transaction\n")
+		buf.WriteString("// DBUpsert creates or updates a " + n + " record inside a safe transaction\n")
 		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBUpsert", "ctx context.Context, db *sql.DB", "(bool, bool, error)"))
 		buf.WriteString("\ttx, err := db.Begin()\n")
 		buf.WriteString("\tif err != nil {\n")
@@ -254,6 +431,31 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 		buf.WriteString("\t\treturn false, false, err\n")
 		buf.WriteString("\t}\n")
 		buf.WriteString("\terr = tx.Commit()\n")
+		buf.WriteString("\tif err != nil {\n")
+		buf.WriteString("\t\ttx.Rollback()\n")
+		buf.WriteString("\t\treturn false, false, err\n")
+		buf.WriteString("\t}\n")
+		buf.WriteString("\treturn r != nil, false, nil\n")
+		buf.WriteString("}\n")
+		buf.WriteString("\n")
+
+		// UPSERT with Tx
+		buf.WriteString("// DBUpsertTx creates or updates a " + n + " record within an existing transaction\n")
+		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBUpsertTx", "ctx context.Context, tx *sql.Tx", "(bool, bool, error)"))
+		buf.WriteString("\texists, err := " + prefix + ".DBExistsTx(ctx, tx)\n")
+		buf.WriteString("\tif err != nil {\n")
+		buf.WriteString("\t\ttx.Rollback()\n")
+		buf.WriteString("\t\treturn false, false, err\n")
+		buf.WriteString("\t}\n")
+		buf.WriteString("\tif exists {\n")
+		buf.WriteString("\t\tr, err := " + prefix + ".DBUpdateTx(ctx, tx)\n")
+		buf.WriteString("\t\tif err != nil {\n")
+		buf.WriteString("\t\t\ttx.Rollback()\n")
+		buf.WriteString("\t\t\treturn false, false, err\n")
+		buf.WriteString("\t\t}\n")
+		buf.WriteString("\t\treturn false, r != nil, nil\n")
+		buf.WriteString("\t}\n")
+		buf.WriteString("\tr, err := " + prefix + ".DBCreateTx(ctx, tx)\n")
 		buf.WriteString("\tif err != nil {\n")
 		buf.WriteString("\t\ttx.Rollback()\n")
 		buf.WriteString("\t\treturn false, false, err\n")
@@ -308,6 +510,23 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 	}
 	return count.Int64, nil
 `)
+	buf.WriteString("}\n")
+	buf.WriteString("\n")
+
+	// Delete all
+	buf.WriteString("// DeleteAll deletes all " + n + " records in the database with optional filters\n")
+	buf.WriteString("func DeleteAll" + n + "s(ctx context.Context, db *sql.DB, _params ...interface{}) (error) {\n")
+	buf.WriteString("\tparams := make([]interface{}, 0)\n")
+	buf.WriteString(fmt.Sprintf(`	params = append(params, orm.Table("%s"))
+	if len(_params) > 0 {
+		for _, param := range _params {
+			params = append(params, param)
+		}
+	}
+`, t.name))
+	buf.WriteString("\tq, p := orm.BuildQuery(params...)\n")
+	buf.WriteString("\t_, err := db.ExecContext(ctx, \"DELETE \"+ q, p...)\n")
+	buf.WriteString("\treturn err\n")
 	buf.WriteString("}\n")
 	buf.WriteString("\n")
 
