@@ -10,6 +10,17 @@ import (
 	"strings"
 )
 
+// this is exteremly simplistic but good enough for now
+func (t *table) pluralize(name string) string {
+	if strings.HasSuffix(name, "s") {
+		return name + "es"
+	}
+	if strings.HasSuffix(name, "y") {
+		return name[0:len(name)-1] + "ies"
+	}
+	return name + "s"
+}
+
 func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 	buf := bufio.NewWriter(writer)
 
@@ -472,7 +483,7 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 	}
 
 	// FIND
-	buf.WriteString("// Find a specific " + n + " with a filter\n")
+	buf.WriteString("// DBFind will find a specific " + n + " with a filter\n")
 	buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBFind", "ctx context.Context, db *sql.DB, _params ...interface{}", "(bool, error)"))
 	buf.WriteString("\tparams := make([]interface{}, 0)\n")
 	buf.WriteString(cstring.String())
@@ -484,14 +495,33 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 	}
 `, t.name))
 	buf.WriteString("\tq, p := orm.BuildQuery(params...)\n")
-	buf.WriteString("\trow := db.QueryRow(q, p...)\n")
+	buf.WriteString("\trow := db.QueryRowContext(ctx, q, p...)\n")
+	buf.WriteString(generateScan("row", "", "false"))
+	buf.WriteString("\treturn true, nil\n")
+	buf.WriteString("}\n")
+	buf.WriteString("\n")
+
+	// FIND with Tx
+	buf.WriteString("// DBFindTx will find a specific " + n + " with a filter\n")
+	buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBFindTx", "ctx context.Context, tx *sql.Tx, _params ...interface{}", "(bool, error)"))
+	buf.WriteString("\tparams := make([]interface{}, 0)\n")
+	buf.WriteString(cstring.String())
+	buf.WriteString(fmt.Sprintf(`	params = append(params, orm.Table("%s"))
+	if len(_params) > 0 {
+		for _, param := range _params {
+			params = append(params, param)
+		}
+	}
+`, t.name))
+	buf.WriteString("\tq, p := orm.BuildQuery(params...)\n")
+	buf.WriteString("\trow := tx.QueryRowContext(ctx, q, p...)\n")
 	buf.WriteString(generateScan("row", "", "false"))
 	buf.WriteString("\treturn true, nil\n")
 	buf.WriteString("}\n")
 	buf.WriteString("\n")
 
 	// COUNT
-	buf.WriteString("// Count the total number of " + n + " records with optional filters\n")
+	buf.WriteString("// DBCount will return the total number of " + n + " records with optional filters\n")
 	buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBCount", "ctx context.Context, db *sql.DB, _params ...interface{}", "(int64, error)"))
 	buf.WriteString(fmt.Sprintf(`	params := make([]interface{}, 0)
 	params = append(params, orm.CountAlias("*", "count"))
@@ -504,7 +534,7 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 `, t.name))
 	buf.WriteString(`	q, p := orm.BuildQuery(params...)
 	var count sql.NullInt64
-	err := db.QueryRow(q, p...).Scan(&count)
+	err := db.QueryRowContext(ctx, q, p...).Scan(&count)
 	if err != nil && err != sql.ErrNoRows {
 		return 0, err
 	}
@@ -513,9 +543,34 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 	buf.WriteString("}\n")
 	buf.WriteString("\n")
 
+	// COUNT with Tx
+	buf.WriteString("// DBCountTx will return the total number of " + n + " records with optional filters\n")
+	buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBCountTx", "ctx context.Context, tx *sql.Tx, _params ...interface{}", "(int64, error)"))
+	buf.WriteString(fmt.Sprintf(`	params := make([]interface{}, 0)
+	params = append(params, orm.CountAlias("*", "count"))
+	params = append(params, orm.Table("%s"))
+	if len(_params) > 0 {
+		for _, param := range _params {
+			params = append(params, param)
+		}
+	}
+`, t.name))
+	buf.WriteString(`	q, p := orm.BuildQuery(params...)
+	var count sql.NullInt64
+	err := tx.QueryRowContext(ctx, q, p...).Scan(&count)
+	if err != nil && err != sql.ErrNoRows {
+		return 0, err
+	}
+	return count.Int64, nil
+`)
+	buf.WriteString("}\n")
+	buf.WriteString("\n")
+
+	deleteAll := t.pluralize("DeleteAll" + n)
+
 	// Delete all
-	buf.WriteString("// DeleteAll deletes all " + n + " records in the database with optional filters\n")
-	buf.WriteString("func DeleteAll" + n + "s(ctx context.Context, db *sql.DB, _params ...interface{}) (error) {\n")
+	buf.WriteString("// " + deleteAll + " deletes all " + n + " records in the database with optional filters\n")
+	buf.WriteString("func " + deleteAll + "(ctx context.Context, db *sql.DB, _params ...interface{}) (error) {\n")
 	buf.WriteString("\tparams := make([]interface{}, 0)\n")
 	buf.WriteString(fmt.Sprintf(`	params = append(params, orm.Table("%s"))
 	if len(_params) > 0 {
@@ -530,9 +585,28 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 	buf.WriteString("}\n")
 	buf.WriteString("\n")
 
+	// Delete all Tx
+	buf.WriteString("// " + deleteAll + "Tx deletes all " + n + " records in the database with optional filters\n")
+	buf.WriteString("func DeleteAll" + deleteAll + "Tx(ctx context.Context, tx *sql.Tx, _params ...interface{}) (error) {\n")
+	buf.WriteString("\tparams := make([]interface{}, 0)\n")
+	buf.WriteString(fmt.Sprintf(`	params = append(params, orm.Table("%s"))
+	if len(_params) > 0 {
+		for _, param := range _params {
+			params = append(params, param)
+		}
+	}
+`, t.name))
+	buf.WriteString("\tq, p := orm.BuildQuery(params...)\n")
+	buf.WriteString("\t_, err := tx.ExecContext(ctx, \"DELETE \"+ q, p...)\n")
+	buf.WriteString("\treturn err\n")
+	buf.WriteString("}\n")
+	buf.WriteString("\n")
+
+	find := t.pluralize("Find" + n)
+
 	// Find Many
-	buf.WriteString("// Find returns " + n + " records with optional filters\n")
-	buf.WriteString("func Find" + n + "s(ctx context.Context, db *sql.DB, _params ...interface{}) ([]*" + n + ", error) {\n")
+	buf.WriteString("// " + find + " returns " + n + " records with optional filters\n")
+	buf.WriteString("func " + find + "(ctx context.Context, db *sql.DB, _params ...interface{}) ([]*" + n + ", error) {\n")
 	buf.WriteString("\tresults := make([]*" + n + ",0)\n")
 	buf.WriteString("\tparams := make([]interface{}, 0)\n")
 	buf.WriteString(cstring.String())
@@ -544,7 +618,35 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 	}
 `, t.name))
 	buf.WriteString("\tq, p := orm.BuildQuery(params...)\n")
-	buf.WriteString("\trows, err := db.Query(q, p...)\n")
+	buf.WriteString("\trows, err := db.QueryContext(ctx, q, p...)\n")
+	buf.WriteString("\tif err != nil && err != sql.ErrNoRows {\n")
+	buf.WriteString("\t\treturn nil, err\n")
+	buf.WriteString("\t}\n")
+	buf.WriteString("\tdefer rows.Close()\n")
+	buf.WriteString("\tfor rows.Next() {\n")
+	buf.WriteString("\t\t" + prefix + " := &" + n + "{}\n")
+	buf.WriteString(generateScan("rows", "\t", "nil"))
+	buf.WriteString("\t\tresults = append(results, " + prefix + ")\n")
+	buf.WriteString("\t}\n")
+	buf.WriteString("\treturn results, nil\n")
+	buf.WriteString("}\n")
+	buf.WriteString("\n")
+
+	// Find Many Tx
+	buf.WriteString("// " + find + "Tx returns " + n + " records with optional filters\n")
+	buf.WriteString("func " + find + "Tx(ctx context.Context, tx *sql.Tx, _params ...interface{}) ([]*" + n + ", error) {\n")
+	buf.WriteString("\tresults := make([]*" + n + ",0)\n")
+	buf.WriteString("\tparams := make([]interface{}, 0)\n")
+	buf.WriteString(cstring.String())
+	buf.WriteString(fmt.Sprintf(`	params = append(params, orm.Table("%s"))
+	if len(_params) > 0 {
+		for _, param := range _params {
+			params = append(params, param)
+		}
+	}
+`, t.name))
+	buf.WriteString("\tq, p := orm.BuildQuery(params...)\n")
+	buf.WriteString("\trows, err := tx.QueryContext(ctx, q, p...)\n")
 	buf.WriteString("\tif err != nil && err != sql.ErrNoRows {\n")
 	buf.WriteString("\t\treturn nil, err\n")
 	buf.WriteString("\t}\n")
