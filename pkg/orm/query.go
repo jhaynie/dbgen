@@ -162,6 +162,7 @@ const (
 
 type ConditionDef struct {
 	Name     string
+	Func     string
 	Operator Operator
 	Value    interface{}
 }
@@ -177,17 +178,23 @@ func (f ConditionDef) AddValue(array []interface{}) []interface{} {
 }
 
 func (f ConditionDef) String() string {
+	var lhs string
+	if f.Name != "" {
+		lhs = "`" + f.Name + "`"
+	} else {
+		lhs = f.Func
+	}
 	switch f.Operator {
 	case OperatorNotNull, OperatorNull:
 		{
-			return "`" + f.Name + "` " + string(f.Operator)
+			return lhs + " " + string(f.Operator)
 		}
 	case OperatorIn:
 		{
-			return "`" + f.Name + "` " + string(f.Operator) + " (?)"
+			return lhs + " " + string(f.Operator) + " (?)"
 		}
 	}
-	return "`" + f.Name + "` " + string(f.Operator) + " ?"
+	return lhs + " " + string(f.Operator) + " ?"
 }
 
 type AndOr string
@@ -254,9 +261,25 @@ func IsEqual(name string, value interface{}) ConditionDef {
 	}
 }
 
+func IsEqualExpr(expr string, value interface{}) ConditionDef {
+	return ConditionDef{
+		Func:     expr,
+		Operator: OperatorEqual,
+		Value:    value,
+	}
+}
+
 func IsNotEqual(name string, value interface{}) ConditionDef {
 	return ConditionDef{
 		Name:     name,
+		Operator: OperatorNotEqual,
+		Value:    value,
+	}
+}
+
+func IsNotEqualExpr(expr string, value interface{}) ConditionDef {
+	return ConditionDef{
+		Func:     expr,
 		Operator: OperatorNotEqual,
 		Value:    value,
 	}
@@ -270,9 +293,25 @@ func IsGreaterThan(name string, value interface{}) ConditionDef {
 	}
 }
 
+func IsGreaterThanExpr(expr string, value interface{}) ConditionDef {
+	return ConditionDef{
+		Func:     expr,
+		Operator: OperatorGreaterThan,
+		Value:    value,
+	}
+}
+
 func IsGreaterThanEqual(name string, value interface{}) ConditionDef {
 	return ConditionDef{
 		Name:     name,
+		Operator: OperatorGreaterThanEqual,
+		Value:    value,
+	}
+}
+
+func IsGreaterThanEqualExpr(expr string, value interface{}) ConditionDef {
+	return ConditionDef{
+		Func:     expr,
 		Operator: OperatorGreaterThanEqual,
 		Value:    value,
 	}
@@ -286,9 +325,25 @@ func IsLessThan(name string, value interface{}) ConditionDef {
 	}
 }
 
+func IsLessThanExpr(expr string, value interface{}) ConditionDef {
+	return ConditionDef{
+		Func:     expr,
+		Operator: OperatorLessThan,
+		Value:    value,
+	}
+}
+
 func IsLessThanEqual(name string, value interface{}) ConditionDef {
 	return ConditionDef{
 		Name:     name,
+		Operator: OperatorLessThanEqual,
+		Value:    value,
+	}
+}
+
+func IsLessThanEqualExpr(expr string, value interface{}) ConditionDef {
+	return ConditionDef{
+		Func:     expr,
 		Operator: OperatorLessThanEqual,
 		Value:    value,
 	}
@@ -301,6 +356,13 @@ func IsNull(name string) ConditionDef {
 	}
 }
 
+func IsNullExpr(expr string) ConditionDef {
+	return ConditionDef{
+		Func:     expr,
+		Operator: OperatorNull,
+	}
+}
+
 func IsNotNull(name string) ConditionDef {
 	return ConditionDef{
 		Name:     name,
@@ -308,9 +370,24 @@ func IsNotNull(name string) ConditionDef {
 	}
 }
 
+func IsNotExpr(expr string) ConditionDef {
+	return ConditionDef{
+		Func:     expr,
+		Operator: OperatorNotNull,
+	}
+}
+
 func IsIn(name string, value interface{}) ConditionDef {
 	return ConditionDef{
 		Name:     name,
+		Operator: OperatorIn,
+		Value:    value,
+	}
+}
+
+func IsInExpr(expr string, value interface{}) ConditionDef {
+	return ConditionDef{
+		Func:     expr,
 		Operator: OperatorIn,
 		Value:    value,
 	}

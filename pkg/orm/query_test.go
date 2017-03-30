@@ -212,4 +212,9 @@ func TestBuildQuery(t *testing.T) {
 	assert.Equal("WHERE `repo_id` = ? LIMIT 1", q)
 	assert.NotNil(p)
 	assert.Len(p, 1)
+
+	q, p = BuildQuery(IsLessThanEqualExpr("DATE(CONVERT_TZ(date,'UTC','-07:00'))", "123"))
+	assert.Equal("WHERE DATE(CONVERT_TZ(date,'UTC','-07:00')) <= ?", q)
+	assert.NotNil(p)
+	assert.Len(p, 1)
 }
