@@ -442,9 +442,21 @@ func Descending(name string) OrderDef {
 	return OrderDef{name, DirectionDescending}
 }
 
+type GroupDef struct {
+	Name string
+}
+
+func (g GroupDef) String() string {
+	return "`" + g.Name + "`"
+}
+
+func GroupBy(name string) GroupDef {
+	return GroupDef{name}
+}
+
 func BuildQuery(components ...interface{}) (string, []interface{}) {
 	var buf bytes.Buffer
-	var hasField, hasTable, hasWhere, hasOrder, hasLimit bool
+	var hasField, hasTable, hasWhere, hasGroup, hasOrder, hasLimit bool
 	params := make([]interface{}, 0)
 	for _, component := range components {
 		if f, ok := component.(ColumnDef); ok {
@@ -487,6 +499,16 @@ func BuildQuery(components ...interface{}) (string, []interface{}) {
 			}
 			buf.WriteString(c.String())
 			params = c.AddValue(params)
+			continue
+		}
+		if g, ok := component.(GroupDef); ok {
+			if hasGroup == false {
+				hasGroup = true
+				buf.WriteString(" GROUP BY ")
+			} else {
+				buf.WriteString(", ")
+			}
+			buf.WriteString(g.String())
 			continue
 		}
 		if o, ok := component.(OrderDef); ok {

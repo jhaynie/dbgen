@@ -217,4 +217,13 @@ func TestBuildQuery(t *testing.T) {
 	assert.Equal("WHERE DATE(CONVERT_TZ(date,'UTC','-07:00')) <= ?", q)
 	assert.NotNil(p)
 	assert.Len(p, 1)
+
+	q, p = BuildQuery(GroupBy("foo"))
+	assert.Equal("GROUP BY `foo`", q)
+
+	q, p = BuildQuery(GroupBy("foo"), GroupBy("bar"))
+	assert.Equal("GROUP BY `foo`, `bar`", q)
+
+	q, p = BuildQuery(GroupBy("foo"), GroupBy("bar"), Ascending("bar"))
+	assert.Equal("GROUP BY `foo`, `bar` ORDER BY `bar` ASC", q)
 }

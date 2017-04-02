@@ -76,7 +76,7 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 	buf.Write(cbuf.Bytes())
 
 	// calculate the checksum
-	buf.WriteString("// Checksum returns a checksum which is a SHA256 of all the values in the record excluding the primary key and checksum\n")
+	buf.WriteString("// CalculateChecksum returns a checksum which is a SHA256 of all the values in the record excluding the primary key and checksum\n")
 	buf.WriteString(t.GenerateFuncPrefix(prefix, n, "CalculateChecksum", "", "string"))
 	buf.WriteString("\treturn orm.HashStrings(\n")
 	for _, column := range t.columns {
@@ -90,7 +90,7 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 	buf.WriteString("\n")
 
 	if checksum != nil {
-		buf.WriteString("// IsDirty returns true if changes have been made since the data was read based on the checksum\n")
+		buf.WriteString("// DBIsDirty returns true if changes have been made since the data was read based on the checksum\n")
 		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBIsDirty", "", "(bool, string)"))
 		buf.WriteString("\tchecksum := " + prefix + ".CalculateChecksum()\n")
 		buf.WriteString("\treturn checksum != " + prefix + "." + CamelCase(checksum.name) + ", checksum\n")
@@ -99,7 +99,7 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 	}
 
 	// INSERT
-	buf.WriteString("// Create will create a new " + CamelCase(t.name) + " record in the database\n")
+	buf.WriteString("// DBCreate will create a new " + CamelCase(t.name) + " record in the database\n")
 	buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBCreate", "ctx context.Context, db *sql.DB", "(sql.Result, error)"))
 	buf.WriteString("\tq := \"INSERT INTO `" + t.name + "` (")
 	for i, column := range t.columns {
@@ -362,7 +362,7 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 			}
 		}
 		buf.WriteString(" FROM `" + t.name + "` WHERE `" + pk.name + "` = ? LIMIT 1\"\n")
-		buf.WriteString("\trow := db.QueryRow(q, " + pk.name + ")\n")
+		buf.WriteString("\trow := db.QueryRowContext(ctx, q, " + pk.name + ")\n")
 		buf.WriteString(generateScan("row", "", "false"))
 		buf.WriteString("\treturn true, nil\n")
 		buf.WriteString("}\n")
@@ -390,7 +390,7 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBExists", "ctx context.Context, db *sql.DB", "(bool, error)"))
 		buf.WriteString("\tq := \"SELECT " + pk.GenerateSQLSelect() + " from `" + t.name + "` WHERE " + pk.GenerateSQLSelect() + " = ?\"\n")
 		buf.WriteString("\tvar _" + pk.name + " " + pk.GetSQLType() + "\n")
-		buf.WriteString("\terr := db.QueryRow(q, " + prefix + "." + CamelCase(pk.name) + ").Scan(&_" + pk.name + ")\n")
+		buf.WriteString("\terr := db.QueryRowContext(ctx, q, " + prefix + "." + CamelCase(pk.name) + ").Scan(&_" + pk.name + ")\n")
 		buf.WriteString("\tif err != nil && err != sql.ErrNoRows {\n")
 		buf.WriteString("\t\treturn false, err\n")
 		buf.WriteString("\t}\n")
@@ -414,64 +414,94 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 		// UPSERT
 		buf.WriteString("// DBUpsert creates or updates a " + n + " record inside a safe transaction\n")
 		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBUpsert", "ctx context.Context, db *sql.DB", "(bool, bool, error)"))
-		buf.WriteString("\ttx, err := db.Begin()\n")
+		buf.WriteString("\tq := \"INSERT INTO `" + t.name + "` (")
+		for i, column := range t.columns {
+			buf.WriteString("`" + column.name + "`")
+			if i+1 < colcount {
+				buf.WriteString(",")
+			}
+		}
+		buf.WriteString(") VALUES (")
+		for i, column := range t.columns {
+			buf.WriteString(column.GenerateSQLPlaceholder())
+			if i+1 < colcount {
+				buf.WriteString(",")
+			}
+		}
+		buf.WriteString(") ON DUPLICATE KEY UPDATE ")
+		for i, column := range t.columns {
+			if column.primarykey == false {
+				buf.WriteString("`" + column.name + "` = VALUES(`" + column.name + "`)")
+				if i+1 < colcount {
+					buf.WriteString(", ")
+				}
+			}
+		}
+
+		buf.WriteString("\"\n")
+		buf.WriteString("\tr, err := db.ExecContext(ctx, q,\n")
+		for _, column := range t.columns {
+			if column.IsChecksum() {
+				buf.WriteString("\t\t" + prefix + ".CalculateChecksum()")
+			} else {
+				buf.WriteString("\t\t" + column.GenerateSQL(sqlprefix))
+			}
+			buf.WriteString(",")
+			buf.WriteString("\n")
+		}
+		buf.WriteString("\t)\n")
 		buf.WriteString("\tif err != nil {\n")
 		buf.WriteString("\t\treturn false, false, err\n")
 		buf.WriteString("\t}\n")
-		buf.WriteString("\texists, err := " + prefix + ".DBExists(ctx, db)\n")
-		buf.WriteString("\tif err != nil {\n")
-		buf.WriteString("\t\ttx.Rollback()\n")
-		buf.WriteString("\t\treturn false, false, err\n")
-		buf.WriteString("\t}\n")
-		buf.WriteString("\tif exists {\n")
-		buf.WriteString("\t\tr, err := " + prefix + ".DBUpdate(ctx, db)\n")
-		buf.WriteString("\t\tif err != nil {\n")
-		buf.WriteString("\t\t\ttx.Rollback()\n")
-		buf.WriteString("\t\t\treturn false, false, err\n")
-		buf.WriteString("\t\t}\n")
-		buf.WriteString("\t\terr = tx.Commit()\n")
-		buf.WriteString("\t\tif err != nil {\n")
-		buf.WriteString("\t\t\ttx.Rollback()\n")
-		buf.WriteString("\t\t\treturn false, false, err\n")
-		buf.WriteString("\t\t}\n")
-		buf.WriteString("\t\treturn false, r != nil, nil\n")
-		buf.WriteString("\t}\n")
-		buf.WriteString("\tr, err := " + prefix + ".DBCreate(ctx, db)\n")
-		buf.WriteString("\tif err != nil {\n")
-		buf.WriteString("\t\ttx.Rollback()\n")
-		buf.WriteString("\t\treturn false, false, err\n")
-		buf.WriteString("\t}\n")
-		buf.WriteString("\terr = tx.Commit()\n")
-		buf.WriteString("\tif err != nil {\n")
-		buf.WriteString("\t\ttx.Rollback()\n")
-		buf.WriteString("\t\treturn false, false, err\n")
-		buf.WriteString("\t}\n")
-		buf.WriteString("\treturn r != nil, false, nil\n")
+		buf.WriteString("\tc, _ := r.RowsAffected()\n")
+		buf.WriteString("\treturn c > 0, c == 0, nil\n")
 		buf.WriteString("}\n")
 		buf.WriteString("\n")
 
 		// UPSERT with Tx
 		buf.WriteString("// DBUpsertTx creates or updates a " + n + " record within an existing transaction\n")
 		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBUpsertTx", "ctx context.Context, tx *sql.Tx", "(bool, bool, error)"))
-		buf.WriteString("\texists, err := " + prefix + ".DBExistsTx(ctx, tx)\n")
+		buf.WriteString("\tq := \"INSERT INTO `" + t.name + "` (")
+		for i, column := range t.columns {
+			buf.WriteString("`" + column.name + "`")
+			if i+1 < colcount {
+				buf.WriteString(",")
+			}
+		}
+		buf.WriteString(") VALUES (")
+		for i, column := range t.columns {
+			buf.WriteString(column.GenerateSQLPlaceholder())
+			if i+1 < colcount {
+				buf.WriteString(",")
+			}
+		}
+		buf.WriteString(") ON DUPLICATE KEY UPDATE ")
+		for i, column := range t.columns {
+			if column.primarykey == false {
+				buf.WriteString("`" + column.name + "` = VALUES(`" + column.name + "`)")
+				if i+1 < colcount {
+					buf.WriteString(", ")
+				}
+			}
+		}
+
+		buf.WriteString("\"\n")
+		buf.WriteString("\tr, err := tx.ExecContext(ctx, q,\n")
+		for _, column := range t.columns {
+			if column.IsChecksum() {
+				buf.WriteString("\t\t" + prefix + ".CalculateChecksum()")
+			} else {
+				buf.WriteString("\t\t" + column.GenerateSQL(sqlprefix))
+			}
+			buf.WriteString(",")
+			buf.WriteString("\n")
+		}
+		buf.WriteString("\t)\n")
 		buf.WriteString("\tif err != nil {\n")
-		buf.WriteString("\t\ttx.Rollback()\n")
 		buf.WriteString("\t\treturn false, false, err\n")
 		buf.WriteString("\t}\n")
-		buf.WriteString("\tif exists {\n")
-		buf.WriteString("\t\tr, err := " + prefix + ".DBUpdateTx(ctx, tx)\n")
-		buf.WriteString("\t\tif err != nil {\n")
-		buf.WriteString("\t\t\ttx.Rollback()\n")
-		buf.WriteString("\t\t\treturn false, false, err\n")
-		buf.WriteString("\t\t}\n")
-		buf.WriteString("\t\treturn false, r != nil, nil\n")
-		buf.WriteString("\t}\n")
-		buf.WriteString("\tr, err := " + prefix + ".DBCreateTx(ctx, tx)\n")
-		buf.WriteString("\tif err != nil {\n")
-		buf.WriteString("\t\ttx.Rollback()\n")
-		buf.WriteString("\t\treturn false, false, err\n")
-		buf.WriteString("\t}\n")
-		buf.WriteString("\treturn r != nil, false, nil\n")
+		buf.WriteString("\tc, _ := r.RowsAffected()\n")
+		buf.WriteString("\treturn c > 0, c == 0, nil\n")
 		buf.WriteString("}\n")
 		buf.WriteString("\n")
 
@@ -587,7 +617,7 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 
 	// Delete all Tx
 	buf.WriteString("// " + deleteAll + "Tx deletes all " + n + " records in the database with optional filters\n")
-	buf.WriteString("func DeleteAll" + deleteAll + "Tx(ctx context.Context, tx *sql.Tx, _params ...interface{}) (error) {\n")
+	buf.WriteString("func " + deleteAll + "Tx(ctx context.Context, tx *sql.Tx, _params ...interface{}) (error) {\n")
 	buf.WriteString("\tparams := make([]interface{}, 0)\n")
 	buf.WriteString(fmt.Sprintf(`	params = append(params, orm.Table("%s"))
 	if len(_params) > 0 {
@@ -657,6 +687,50 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 	buf.WriteString("\t\tresults = append(results, " + prefix + ")\n")
 	buf.WriteString("\t}\n")
 	buf.WriteString("\treturn results, nil\n")
+	buf.WriteString("}\n")
+	buf.WriteString("\n")
+
+	count := t.pluralize("Count" + n)
+
+	// Count
+	buf.WriteString("// " + count + " returns the number of " + t.pluralize(n) + " with optional filters\n")
+	buf.WriteString("func " + count + "(ctx context.Context, tx *sql.Tx, _params ...interface{}) (int, error) {\n")
+	buf.WriteString("\tparams := make([]interface{}, 0)\n")
+	buf.WriteString(fmt.Sprintf(`	params = append(params, orm.Count("*"), orm.Table("%s"))
+	if len(_params) > 0 {
+		for _, param := range _params {
+			params = append(params, param)
+		}
+	}
+`, t.name))
+	buf.WriteString("\tq, p := orm.BuildQuery(params...)\n")
+	buf.WriteString("\tvar c int\n")
+	buf.WriteString("\terr := tx.QueryRowContext(ctx, q, p...).Scan(&c)\n")
+	buf.WriteString("\tif err != nil && err != sql.ErrNoRows {\n")
+	buf.WriteString("\t\treturn 0, err\n")
+	buf.WriteString("\t}\n")
+	buf.WriteString("\treturn c, nil\n")
+	buf.WriteString("}\n")
+	buf.WriteString("\n")
+
+	// Count Tx
+	buf.WriteString("// " + count + "Tx returns the number of " + t.pluralize(n) + " with optional filters\n")
+	buf.WriteString("func " + count + "Tx(ctx context.Context, tx *sql.Tx, _params ...interface{}) (int, error) {\n")
+	buf.WriteString("\tparams := make([]interface{}, 0)\n")
+	buf.WriteString(fmt.Sprintf(`	params = append(params, orm.Count("*"), orm.Table("%s"))
+	if len(_params) > 0 {
+		for _, param := range _params {
+			params = append(params, param)
+		}
+	}
+`, t.name))
+	buf.WriteString("\tq, p := orm.BuildQuery(params...)\n")
+	buf.WriteString("\tvar c int\n")
+	buf.WriteString("\terr := tx.QueryRowContext(ctx, q, p...).Scan(&c)\n")
+	buf.WriteString("\tif err != nil && err != sql.ErrNoRows {\n")
+	buf.WriteString("\t\treturn 0, err\n")
+	buf.WriteString("\t}\n")
+	buf.WriteString("\treturn c, nil\n")
 	buf.WriteString("}\n")
 	buf.WriteString("\n")
 
