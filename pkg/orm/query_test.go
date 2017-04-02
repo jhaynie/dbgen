@@ -226,4 +226,13 @@ func TestBuildQuery(t *testing.T) {
 
 	q, p = BuildQuery(GroupBy("foo"), GroupBy("bar"), Ascending("bar"))
 	assert.Equal("GROUP BY `foo`, `bar` ORDER BY `bar` ASC", q)
+
+	q, p = BuildQuery(Join("a", "b"))
+	assert.Equal("WHERE a = b", q)
+
+	q, p = BuildQuery(Join("a.id", "b.some_id"))
+	assert.Equal("WHERE a.id = b.some_id", q)
+
+	q, p = BuildQuery(Join("a.id", "b.some_id"), Join("x", "y"))
+	assert.Equal("WHERE a.id = b.some_id AND x = y", q)
 }

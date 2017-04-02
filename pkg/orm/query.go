@@ -454,6 +454,19 @@ func GroupBy(name string) GroupDef {
 	return GroupDef{name}
 }
 
+type JoinDef struct {
+	A string
+	B string
+}
+
+func (j JoinDef) String() string {
+	return j.A + " = " + j.B
+}
+
+func Join(a, b string) JoinDef {
+	return JoinDef{a, b}
+}
+
 func BuildQuery(components ...interface{}) (string, []interface{}) {
 	var buf bytes.Buffer
 	var hasField, hasTable, hasWhere, hasGroup, hasOrder, hasLimit bool
@@ -499,6 +512,16 @@ func BuildQuery(components ...interface{}) (string, []interface{}) {
 			}
 			buf.WriteString(c.String())
 			params = c.AddValue(params)
+			continue
+		}
+		if j, ok := component.(JoinDef); ok {
+			if hasWhere == false {
+				hasWhere = true
+				buf.WriteString(" WHERE ")
+			} else {
+				buf.WriteString(" AND ")
+			}
+			buf.WriteString(j.String())
 			continue
 		}
 		if g, ok := component.(GroupDef); ok {
