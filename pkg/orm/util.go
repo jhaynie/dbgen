@@ -85,6 +85,14 @@ func ToString(v interface{}) string {
 	return fmt.Sprintf("%v", v)
 }
 
+func JoinAsString(v []interface{}) string {
+	s := make([]string, 0)
+	for _, i := range v {
+		s = append(s, ToString(i))
+	}
+	return strings.Join(s, ", ")
+}
+
 func ToSQLString(v string) sql.NullString {
 	if v == "" {
 		return sql.NullString{}

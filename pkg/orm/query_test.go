@@ -1,6 +1,7 @@
 package orm
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -67,7 +68,25 @@ func TestQuery(t *testing.T) {
 	assert.Equal("`foo` <= ?", IsLessThanEqual("foo", 1).String())
 	assert.Equal("`foo` IS NULL", IsNull("foo").String())
 	assert.Equal("`foo` IS NOT NULL", IsNotNull("foo").String())
-	assert.Equal("`foo` IN (?)", IsIn("foo", []string{"1", "2"}).String())
+	assert.Equal("`foo` IN (?,?)", IsIn("foo", []interface{}{"1", "2"}).String())
+}
+
+func TestQueryInArray(t *testing.T) {
+	assert := assert.New(t)
+	e := IsInExpr("foo", []interface{}{"1", "2"})
+	fmt.Println(e)
+	assert.Equal("foo IN (?,?)", e.String())
+	params := make([]interface{}, 0)
+	p := e.AddValue(params)
+	assert.Equal("1, 2", JoinAsString(p))
+
+	q, p := BuildQuery(IsIn("a", []interface{}{"1", "2"}))
+	assert.Equal("WHERE `a` IN (?,?)", q)
+	assert.Equal("1, 2", JoinAsString(p))
+
+	q, p = BuildQuery(IsInExpr("a", []interface{}{"1", "2"}))
+	assert.Equal("WHERE a IN (?,?)", q)
+	assert.Equal("1, 2", JoinAsString(p))
 }
 
 func TestQueryParams(t *testing.T) {

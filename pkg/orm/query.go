@@ -178,10 +178,11 @@ const (
 )
 
 type ConditionDef struct {
-	Name     string
-	Func     string
-	Operator Operator
-	Value    interface{}
+	Name         string
+	Func         string
+	Operator     Operator
+	OperatorExpr string
+	Value        interface{}
 }
 
 func (f ConditionDef) AddValue(array []interface{}) []interface{} {
@@ -189,6 +190,15 @@ func (f ConditionDef) AddValue(array []interface{}) []interface{} {
 	case OperatorNotNull, OperatorNull:
 		{
 			return array
+		}
+	case OperatorIn:
+		{
+			if a, ok := f.Value.([]interface{}); ok {
+				for _, i := range a {
+					array = append(array, i)
+				}
+				return array
+			}
 		}
 	}
 	return append(array, f.Value)
@@ -208,7 +218,10 @@ func (f ConditionDef) String() string {
 		}
 	case OperatorIn:
 		{
-			return lhs + " " + string(f.Operator) + " (?)"
+			if f.OperatorExpr == "" {
+				return lhs + " " + string(f.Operator) + " (?)"
+			}
+			return lhs + " " + string(f.Operator) + " (" + f.OperatorExpr + ")"
 		}
 	}
 	return lhs + " " + string(f.Operator) + " ?"
@@ -394,19 +407,26 @@ func IsNotExpr(expr string) ConditionDef {
 	}
 }
 
-func IsIn(name string, value interface{}) ConditionDef {
+func makeInExpr(value []interface{}) string {
+	l := len(value)
+	return "?" + strings.Repeat(",?", l-1)
+}
+
+func IsIn(name string, value []interface{}) ConditionDef {
 	return ConditionDef{
-		Name:     name,
-		Operator: OperatorIn,
-		Value:    value,
+		Name:         name,
+		Operator:     OperatorIn,
+		OperatorExpr: makeInExpr(value),
+		Value:        value,
 	}
 }
 
-func IsInExpr(expr string, value interface{}) ConditionDef {
+func IsInExpr(expr string, value []interface{}) ConditionDef {
 	return ConditionDef{
-		Func:     expr,
-		Operator: OperatorIn,
-		Value:    value,
+		Func:         expr,
+		Operator:     OperatorIn,
+		OperatorExpr: makeInExpr(value),
+		Value:        value,
 	}
 }
 
