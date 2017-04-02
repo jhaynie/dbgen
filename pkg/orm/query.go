@@ -50,7 +50,11 @@ func (f ColumnDef) String() string {
 		n = "`" + f.Table + "`." + n
 	}
 	if f.Expr != "" {
-		n = f.Expr + "(" + n + ")"
+		if f.Name != "" {
+			n = f.Expr + "(" + n + ")"
+		} else {
+			n = f.Expr
+		}
 	}
 	if f.Alias != "" {
 		return n + " AS `" + f.Alias + "`"
@@ -67,6 +71,19 @@ func Column(name string) ColumnDef {
 func ColumnAlias(name, alias string) ColumnDef {
 	return ColumnDef{
 		Name:  name,
+		Alias: alias,
+	}
+}
+
+func ColumnExpr(expr string) ColumnDef {
+	return ColumnDef{
+		Expr: expr,
+	}
+}
+
+func ColumnExprAlias(expr, alias string) ColumnDef {
+	return ColumnDef{
+		Expr:  expr,
 		Alias: alias,
 	}
 }

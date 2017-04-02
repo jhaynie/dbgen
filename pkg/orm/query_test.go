@@ -235,4 +235,13 @@ func TestBuildQuery(t *testing.T) {
 
 	q, p = BuildQuery(Join("a.id", "b.some_id"), Join("x", "y"))
 	assert.Equal("WHERE a.id = b.some_id AND x = y", q)
+
+	q, p = BuildQuery(ColumnDef{Expr: "DATEDIFF(COALESCE(b.closed_at, NOW()), b.created_at)", Alias: "days_open"})
+	assert.Equal("SELECT DATEDIFF(COALESCE(b.closed_at, NOW()), b.created_at) AS `days_open`", q)
+
+	q, p = BuildQuery(ColumnExprAlias("DATEDIFF(COALESCE(b.closed_at, NOW()), b.created_at)", "days_open"))
+	assert.Equal("SELECT DATEDIFF(COALESCE(b.closed_at, NOW()), b.created_at) AS `days_open`", q)
+
+	q, p = BuildQuery(ColumnExpr("DATEDIFF(COALESCE(b.closed_at, NOW()), b.created_at)"))
+	assert.Equal("SELECT DATEDIFF(COALESCE(b.closed_at, NOW()), b.created_at)", q)
 }
