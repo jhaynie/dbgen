@@ -39,12 +39,16 @@ func TestToString(t *testing.T) {
 	tvs := tv.String()
 	assert.Equal(ToString(tv), tvs, "should have been "+tvs)
 	assert.Equal(ToString(mysql.NullTime{Time: tv, Valid: true}), tvs, "should have been "+tvs)
+	s := "abc"
+	assert.Equal(ToString(&s), "abc", "should have been abc")
 }
 
 func TestSQLString(t *testing.T) {
 	assert := assert.New(t)
 	s := "select * from foo"
 	str := ToSQLString(s)
+	assert.Equal(str.String, s, "should have been "+s)
+	str = ToSQLString(&s)
 	assert.Equal(str.String, s, "should have been "+s)
 }
 
@@ -92,7 +96,13 @@ func TestSQLInt64(t *testing.T) {
 	v := ToSQLInt64("123")
 	assert.Equal(v.Valid, true, "should have been true")
 	assert.Equal(v.Int64, int64(123), "should have been 123")
-
+	i := 123
+	v = ToSQLInt64(&i)
+	assert.Equal(v.Valid, true, "should have been true")
+	assert.Equal(v.Int64, int64(123), "should have been 123")
+	v = ToSQLInt64(i)
+	assert.Equal(v.Valid, true, "should have been true")
+	assert.Equal(v.Int64, int64(123), "should have been 123")
 	v = ToSQLInt64("")
 	assert.Equal(v.Valid, false, "should have been false")
 	assert.Equal(v.Int64, int64(0), "should have been 0")
@@ -101,6 +111,15 @@ func TestSQLInt64(t *testing.T) {
 func TestSQLFloat64(t *testing.T) {
 	assert := assert.New(t)
 	v := ToSQLFloat64("123.0")
+	assert.Equal(v.Valid, true, "should have been true")
+	assert.Equal(v.Float64, float64(123.0), "should have been 123.0000")
+
+	f := 123.0
+	v = ToSQLFloat64(&f)
+	assert.Equal(v.Valid, true, "should have been true")
+	assert.Equal(v.Float64, float64(123.0), "should have been 123.0000")
+
+	v = ToSQLFloat64(f)
 	assert.Equal(v.Valid, true, "should have been true")
 	assert.Equal(v.Float64, float64(123.0), "should have been 123.0000")
 
@@ -115,6 +134,13 @@ func TestSQLBool(t *testing.T) {
 	assert.Equal(v.Valid, true, "should have been true")
 	assert.Equal(v.Bool, true, "should have been true")
 	v = ToSQLBool("false")
+	assert.Equal(v.Valid, true, "should have been true")
+	assert.Equal(v.Bool, false, "should have been false")
+	v = ToSQLBool(false)
+	assert.Equal(v.Valid, true, "should have been true")
+	assert.Equal(v.Bool, false, "should have been false")
+	f := false
+	v = ToSQLBool(&f)
 	assert.Equal(v.Valid, true, "should have been true")
 	assert.Equal(v.Bool, false, "should have been false")
 	v = ToSQLBool("")
@@ -163,4 +189,13 @@ func TestNullInt32(t *testing.T) {
 	assert.Equal(v, NullInt32)
 	assert.False(IsNullInt(123))
 	assert.True(IsNullInt(int32(v)))
+}
+
+func TestJSON(t *testing.T) {
+	assert := assert.New(t)
+	assert.Equal(`{"a":"b"}`, Stringify(map[string]string{"a": "b"}))
+
+	assert.Equal(`{
+	"a": "b"
+}`, Stringify(map[string]string{"a": "b"}, true))
 }

@@ -18,6 +18,7 @@ import (
 	tspb "github.com/golang/protobuf/ptypes/timestamp"
 )
 
+// ToString returns a string representation for the value passed
 func ToString(v interface{}) string {
 	if v == nil {
 		return ""
@@ -26,6 +27,9 @@ func ToString(v interface{}) string {
 		return s
 	}
 	if s, ok := v.(*string); ok {
+		if s == nil {
+			return ""
+		}
 		return *s
 	}
 	if i, ok := v.(int); ok {
@@ -88,6 +92,7 @@ func ToString(v interface{}) string {
 	return fmt.Sprintf("%v", v)
 }
 
+// JoinAsString will join the array passed as a string which is comma separated
 func JoinAsString(v []interface{}) string {
 	s := make([]string, 0)
 	for _, i := range v {
@@ -96,6 +101,7 @@ func JoinAsString(v []interface{}) string {
 	return strings.Join(s, ", ")
 }
 
+// ToSQLString returns a sql.NullString for value passed
 func ToSQLString(value interface{}) sql.NullString {
 	if v, ok := value.(string); ok {
 		if v == "" {
@@ -112,6 +118,7 @@ func ToSQLString(value interface{}) sql.NullString {
 	return ToSQLString(fmt.Sprintf("%v", value))
 }
 
+// ToSQLDate returns a mysql.NullTime for the value passed
 func ToSQLDate(v interface{}) mysql.NullTime {
 	if v == nil {
 		return mysql.NullTime{}
@@ -148,17 +155,15 @@ func ToSQLDate(v interface{}) mysql.NullTime {
 				return mysql.NullTime{}
 			}
 			return mysql.NullTime{Time: date.UTC(), Valid: true}
-		} else {
-			if v.(string) == "" {
-				return mysql.NullTime{}
-			} else {
-				date, err := time.Parse("2006-01-02 15:04:05", v.(string))
-				if err != nil {
-					return mysql.NullTime{}
-				}
-				return mysql.NullTime{Time: date.UTC(), Valid: true}
-			}
 		}
+		if v.(string) == "" {
+			return mysql.NullTime{}
+		}
+		date, err := time.Parse("2006-01-02 15:04:05", v.(string))
+		if err != nil {
+			return mysql.NullTime{}
+		}
+		return mysql.NullTime{Time: date.UTC(), Valid: true}
 	default:
 		return mysql.NullTime{}
 	}
@@ -185,6 +190,7 @@ func toFloat64(v string) float64 {
 	return 0
 }
 
+// ToSQLInt64 returns a sql.NullInt64 from the value
 func ToSQLInt64(v interface{}) sql.NullInt64 {
 	if v == nil {
 		return sql.NullInt64{}
@@ -233,7 +239,7 @@ func ToSQLInt64(v interface{}) sql.NullInt64 {
 			if i == nil {
 				return sql.NullInt64{}
 			}
-			return ToSQLInt64(i)
+			return ToSQLInt64(*i)
 		}
 	case *int32:
 		{
@@ -241,7 +247,7 @@ func ToSQLInt64(v interface{}) sql.NullInt64 {
 			if i == nil {
 				return sql.NullInt64{}
 			}
-			return ToSQLInt64(i)
+			return ToSQLInt64(*i)
 		}
 	case *int64:
 		{
@@ -249,13 +255,14 @@ func ToSQLInt64(v interface{}) sql.NullInt64 {
 			if i == nil {
 				return sql.NullInt64{}
 			}
-			return ToSQLInt64(i)
+			return ToSQLInt64(*i)
 		}
 	default:
 		return sql.NullInt64{Int64: toInt64(fmt.Sprintf("%v", v)), Valid: true}
 	}
 }
 
+// ToSQLFloat64 returns a sql.NullFloat64 from the value
 func ToSQLFloat64(v interface{}) sql.NullFloat64 {
 	if v == nil {
 		return sql.NullFloat64{}
@@ -274,6 +281,19 @@ func ToSQLFloat64(v interface{}) sql.NullFloat64 {
 			i = 0
 		}
 		return sql.NullFloat64{Float64: i, Valid: true}
+	case int:
+		{
+			i := v.(int)
+			return sql.NullFloat64{Float64: float64(i), Valid: true}
+		}
+	case *int:
+		{
+			i := v.(*int)
+			if i == nil {
+				return sql.NullFloat64{}
+			}
+			return ToSQLFloat64(*i)
+		}
 	case int32:
 		{
 			i := v.(int32)
@@ -331,6 +351,7 @@ func ToSQLFloat64(v interface{}) sql.NullFloat64 {
 	}
 }
 
+// ToSQLBool returns a sql.NullBool from the value
 func ToSQLBool(v interface{}) sql.NullBool {
 	if v == nil {
 		return sql.NullBool{}
@@ -372,10 +393,12 @@ func ToSQLBool(v interface{}) sql.NullBool {
 	}
 }
 
+// ToSQLBlob returns a sql.NullString from the value
 func ToSQLBlob(buf []byte) sql.NullString {
 	return sql.NullString{String: string(buf), Valid: true}
 }
 
+// HashStrings will return a SHA256 hash of the provided arguments
 func HashStrings(objects ...string) string {
 	h := sha256.New()
 	for _, o := range objects {
@@ -384,6 +407,7 @@ func HashStrings(objects ...string) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
+// ToGeometry will return a Geometry from a POINT string
 func ToGeometry(point string) *Geometry {
 	// POINT(-122.3890954 37.6145378)
 	if strings.HasPrefix(point, "POINT(") {
@@ -398,11 +422,13 @@ func ToGeometry(point string) *Geometry {
 	return &Geometry{}
 }
 
+// ToTimestampNow returns the proto Timestamp from curent time
 func ToTimestampNow() *tspb.Timestamp {
 	ts, _ := ptypes.TimestampProto(time.Now())
 	return ts
 }
 
+// ToTimestamp returns a proto Timestamp from a mysql.NullTime
 func ToTimestamp(t mysql.NullTime) *tspb.Timestamp {
 	if t.Valid {
 		ts, err := ptypes.TimestampProto(t.Time)
@@ -413,22 +439,28 @@ func ToTimestamp(t mysql.NullTime) *tspb.Timestamp {
 	return nil
 }
 
+// ISODate returns a UTC date as string
 func ISODate() string {
 	return time.Now().UTC().Format(time.RFC3339)
 }
 
+// UUID returns a unique ID
 func UUID() string {
 	return HashStrings(ISODate(), fmt.Sprintf("%d", RandUID()))
 }
 
+// RandUID returns a random int32
 func RandUID() int32 {
 	return int32(rand.Intn(99999999))
 }
 
+// NullIntType is a special null type int32
 type NullIntType int32
 
+// NullInt32 is a magic int32 which represents null
 const NullInt32 NullIntType = -2147483647
 
+// IsNullInt returns true if the value passed is a special null value
 func IsNullInt(v int32) bool {
 	return NullIntType(v) == NullInt32
 }
@@ -463,4 +495,20 @@ func (v *NullIntType) Scan(value interface{}) error {
 		}
 	}
 	return errors.New("failed to scan NullIntType")
+}
+
+// Stringify will return a JSON formatted string. pass an optional second argument to pretty print
+func Stringify(v interface{}, opts ...interface{}) string {
+	if len(opts) > 0 {
+		buf, err := json.MarshalIndent(v, "", "\t")
+		if err != nil {
+			return ""
+		}
+		return string(buf)
+	}
+	buf, err := json.Marshal(v)
+	if err != nil {
+		return ""
+	}
+	return string(buf)
 }
