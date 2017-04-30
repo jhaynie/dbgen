@@ -379,7 +379,7 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 			}
 		}
 		buf.WriteString(" FROM `" + t.name + "` WHERE `" + pk.name + "` = ? LIMIT 1\"\n")
-		buf.WriteString("\trow := tx.QueryRow(q, " + pk.name + ")\n")
+		buf.WriteString("\trow := tx.QueryRowContext(ctx, q, " + pk.name + ")\n")
 		buf.WriteString(generateScan("row", "", "false"))
 		buf.WriteString("\treturn true, nil\n")
 		buf.WriteString("}\n")
@@ -403,7 +403,7 @@ func (t *table) GenerateORM(packageName string, writer io.Writer) error {
 		buf.WriteString(t.GenerateFuncPrefix(prefix, n, "DBExistsTx", "ctx context.Context, tx *sql.Tx", "(bool, error)"))
 		buf.WriteString("\tq := \"SELECT " + pk.GenerateSQLSelect() + " from `" + t.name + "` WHERE " + pk.GenerateSQLSelect() + " = ?\"\n")
 		buf.WriteString("\tvar _" + pk.name + " " + pk.GetSQLType() + "\n")
-		buf.WriteString("\terr := tx.QueryRow(q, " + prefix + "." + CamelCase(pk.name) + ").Scan(&_" + pk.name + ")\n")
+		buf.WriteString("\terr := tx.QueryRowContext(ctx, q, " + prefix + "." + CamelCase(pk.name) + ").Scan(&_" + pk.name + ")\n")
 		buf.WriteString("\tif err != nil && err != sql.ErrNoRows {\n")
 		buf.WriteString("\t\treturn false, err\n")
 		buf.WriteString("\t}\n")

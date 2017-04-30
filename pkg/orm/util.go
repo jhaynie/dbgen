@@ -25,6 +25,9 @@ func ToString(v interface{}) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
+	if s, ok := v.(*string); ok {
+		return *s
+	}
 	if i, ok := v.(int); ok {
 		return fmt.Sprintf("%d", i)
 	}
@@ -93,11 +96,20 @@ func JoinAsString(v []interface{}) string {
 	return strings.Join(s, ", ")
 }
 
-func ToSQLString(v string) sql.NullString {
-	if v == "" {
-		return sql.NullString{}
+func ToSQLString(value interface{}) sql.NullString {
+	if v, ok := value.(string); ok {
+		if v == "" {
+			return sql.NullString{}
+		}
+		return sql.NullString{String: v, Valid: true}
 	}
-	return sql.NullString{String: v, Valid: true}
+	if v, ok := value.(*string); ok {
+		if v == nil {
+			return sql.NullString{}
+		}
+		return ToSQLString(*v)
+	}
+	return ToSQLString(fmt.Sprintf("%v", value))
 }
 
 func ToSQLDate(v interface{}) mysql.NullTime {
@@ -215,6 +227,30 @@ func ToSQLInt64(v interface{}) sql.NullInt64 {
 			}
 			return sql.NullInt64{Int64: i, Valid: true}
 		}
+	case *int:
+		{
+			i := v.(*int)
+			if i == nil {
+				return sql.NullInt64{}
+			}
+			return ToSQLInt64(i)
+		}
+	case *int32:
+		{
+			i := v.(*int32)
+			if i == nil {
+				return sql.NullInt64{}
+			}
+			return ToSQLInt64(i)
+		}
+	case *int64:
+		{
+			i := v.(*int64)
+			if i == nil {
+				return sql.NullInt64{}
+			}
+			return ToSQLInt64(i)
+		}
 	default:
 		return sql.NullInt64{Int64: toInt64(fmt.Sprintf("%v", v)), Valid: true}
 	}
@@ -238,9 +274,57 @@ func ToSQLFloat64(v interface{}) sql.NullFloat64 {
 			i = 0
 		}
 		return sql.NullFloat64{Float64: i, Valid: true}
+	case int32:
+		{
+			i := v.(int32)
+			return sql.NullFloat64{Float64: float64(i), Valid: true}
+		}
+	case *int32:
+		{
+			i := v.(*int32)
+			if i == nil {
+				return sql.NullFloat64{}
+			}
+			return ToSQLFloat64(*i)
+		}
 	case int64:
 		{
-			return sql.NullFloat64{Float64: v.(float64), Valid: true}
+			i := v.(int64)
+			return sql.NullFloat64{Float64: float64(i), Valid: true}
+		}
+	case *int64:
+		{
+			i := v.(*int64)
+			if i == nil {
+				return sql.NullFloat64{}
+			}
+			return ToSQLFloat64(*i)
+		}
+	case float32:
+		{
+			f := v.(float32)
+			return sql.NullFloat64{Float64: float64(f), Valid: true}
+		}
+	case float64:
+		{
+			f := v.(float64)
+			return sql.NullFloat64{Float64: f, Valid: true}
+		}
+	case *float32:
+		{
+			f := v.(*float32)
+			if f == nil {
+				return sql.NullFloat64{}
+			}
+			return ToSQLFloat64(*f)
+		}
+	case *float64:
+		{
+			f := v.(*float64)
+			if f == nil {
+				return sql.NullFloat64{}
+			}
+			return ToSQLFloat64(*f)
 		}
 	default:
 		return sql.NullFloat64{Float64: toFloat64(fmt.Sprintf("%v", v)), Valid: true}
@@ -255,6 +339,14 @@ func ToSQLBool(v interface{}) sql.NullBool {
 	case bool:
 		{
 			return sql.NullBool{Bool: v.(bool), Valid: true}
+		}
+	case *bool:
+		{
+			b := v.(*bool)
+			if b == nil {
+				return sql.NullBool{}
+			}
+			return ToSQLBool(*b)
 		}
 	case string:
 		s := v.(string)
@@ -304,6 +396,11 @@ func ToGeometry(point string) *Geometry {
 		}
 	}
 	return &Geometry{}
+}
+
+func ToTimestampNow() *tspb.Timestamp {
+	ts, _ := ptypes.TimestampProto(time.Now())
+	return ts
 }
 
 func ToTimestamp(t mysql.NullTime) *tspb.Timestamp {
